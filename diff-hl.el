@@ -602,10 +602,12 @@ contents as they are (or would be) after applying the changes in NEW."
         (with-current-buffer temp-buffer
           (make-thread
            (lambda ()
-             (kill-buffer temp-buffer)
-             (when (buffer-live-p buf)
-               (set-buffer buf)
-               (diff-hl--update-safe)))
+             (unwind-protect
+                 (when (buffer-live-p buf)
+                   (set-buffer buf)
+                   (diff-hl--update-safe))
+               ;; kill the temp buffer in the main thread.
+               (run-with-idle-timer 0 nil #'kill-buffer temp-buffer)))
            "diff-hl--update-safe")))
     (diff-hl--update)))
 
@@ -666,10 +668,9 @@ Return a list of line overlays used."
                 (overlay-put h 'insert-behind-hooks hook)))))))
     (nreverse ovls)))
 
-(defun diff-hl--update ()
-  (let* ((cc (diff-hl-changes))
-         (ref-changes (assoc-default :reference cc))
-         (changes (assoc-default :working cc))
+(defun diff-hl--update-ui (changes)
+  (let* ((ref-changes (assoc-default :reference changes))
+         (changes (assoc-default :working changes))
          reuse)
     (diff-hl-remove-overlays)
     (let ((diff-hl-highlight-function
@@ -679,7 +680,21 @@ Return a list of line overlays used."
       (setq reuse (diff-hl--update-overlays ref-changes nil)))
     (diff-hl--update-overlays changes reuse)
     (when (not (or changes ref-changes))
-      (diff-hl--autohide-margin))))
+      (diff-hl--autohide-margin)))
+  )
+
+(defun diff-hl--update ()
+  (let* ((cc (diff-hl-changes)))
+    (if (diff-hl--use-async-p)
+	;; let overlay/margin updated in the main thread to avoid problem.
+	(run-with-idle-timer
+         0 nil
+         (let ((buf (current-buffer)))
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (diff-hl--update-ui cc))))))
+      (diff-hl--update-ui cc))))
 
 (defun diff-hl--autohide-margin ()
   (let ((width-var (intern (format "%s-margin-width" diff-hl-side))))
