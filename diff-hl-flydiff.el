@@ -44,8 +44,8 @@
   (setq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
   (if new-rev
       (diff-hl-with-diff-switches
-       (diff-hl-diff-against-reference file backend " *diff-hl-diff*" new-rev))
-    (diff-hl-diff-buffer-with-reference file " *diff-hl-diff*" backend)))
+       (diff-hl-diff-against-reference file backend " *diff-hl-diff*" new-rev :async t))
+    (diff-hl-diff-buffer-with-reference file " *diff-hl-diff*" backend nil :async t)))
 
 (defun diff-hl-flydiff-update ()
   (unless (or
@@ -73,7 +73,7 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
 
         (advice-add 'diff-hl-modified-p :before-until
                     #'diff-hl-flydiff/modified-p)
-        (advice-add 'diff-hl-changes-buffer :override
+        (advice-add 'diff-hl-changes-buffer-async :override
                     #'diff-hl-flydiff-changes-buffer)
         (setq diff-hl-flydiff-timer
               (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update)))
@@ -81,6 +81,6 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
     (advice-remove 'diff-hl-overlay-modified #'ignore)
 
     (advice-remove 'diff-hl-modified-p #'diff-hl-flydiff/modified-p)
-    (advice-remove 'diff-hl-changes-buffer #'diff-hl-flydiff-changes-buffer)))
+    (advice-remove 'diff-hl-changes-buffer-async #'diff-hl-flydiff-changes-buffer)))
 
 (provide 'diff-hl-flydiff)
