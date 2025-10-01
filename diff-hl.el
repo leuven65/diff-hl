@@ -6,7 +6,7 @@
 ;; URL:      https://github.com/dgutov/diff-hl
 ;; Keywords: vc, diff
 ;; Version:  1.10.0
-;; Package-Requires: ((cl-lib "0.2") (emacs "26.1"))
+;; Package-Requires: ((cl-lib "0.2") (aio "1.0") (emacs "26.1"))
 
 ;; This file is part of GNU Emacs.
 
@@ -63,6 +63,7 @@
 (require 'vc)
 (require 'vc-dir)
 (require 'log-view)
+(require 'aio)
 
 (eval-when-compile
   (require 'cl-lib)
@@ -251,7 +252,7 @@ the NEW revision is not specified (meaning, the diff is against
 the current version of the file)."
   :type 'boolean)
 
-(defcustom diff-hl-update-async nil
+(defcustom diff-hl-update-async t
   "When non-nil, `diff-hl-update' will run asynchronously.
 
 This can help prevent Emacs from freezing, especially by a slow version
@@ -260,8 +261,9 @@ didn't work reliably in such during testing."
   :type 'boolean)
 
 ;; Threads are not reliable with remote files, yet.
-(defcustom diff-hl-async-inhibit-functions (list #'diff-hl-with-editor-p
-                                                 #'file-remote-p)
+(defcustom diff-hl-async-inhibit-functions nil
+  ;; (list #'diff-hl-with-editor-p
+  ;;       #'file-remote-p)
   "Functions to call to check whether asychronous method should be disabled.
 
 When `diff-hl-update-async' is non-nil, these functions are called in turn
@@ -440,37 +442,31 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                           (diff-hl--use-async-p)))))))
   buffer)
 
-(defun diff-hl-changes ()
+(aio-defun diff-hl-changes ()
   (let* ((file buffer-file-name)
          (backend (vc-backend file))
          (hide-staged (and (eq backend 'Git) (not diff-hl-show-staged-changes))))
     (when backend
-      (let ((state (vc-state file backend))
-            ;; Workaround for debbugs#78946.
-            ;; This is fiddly, but we basically allow the thread to start, while
-            ;; prohibiting the async process call inside.
-            ;; That still makes it partially async.
-            (diff-hl-update-async (and diff-hl-update-async
-                                       (not (eq window-system 'ns)))))
+      (let ((state (vc-state file backend)))
         (cond
          ((and
            (not diff-hl-highlight-reference-function)
            (diff-hl-modified-p state))
-          `((:working . ,(diff-hl-changes-from-buffer
-                          (diff-hl-changes-buffer file backend)))))
+          `((:working . ,(aio-await (diff-hl-changes-from-buffer
+                                     (diff-hl-changes-buffer file backend))))))
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
           (let* ((ref-changes
                   (and (or diff-hl-reference-revision
                            hide-staged)
-                       (diff-hl-changes-from-buffer
-                        (diff-hl-changes-buffer file backend (if hide-staged
-                                                                 'git-index
-                                                               (diff-hl-head-revision backend))))))
+                       (aio-await (diff-hl-changes-from-buffer
+                                   (diff-hl-changes-buffer file backend (if hide-staged
+                                                                            'git-index
+                                                                          (diff-hl-head-revision backend)))))))
                  (diff-hl-reference-revision nil)
-                 (work-changes (diff-hl-changes-from-buffer
-                                (diff-hl-changes-buffer file backend))))
+                 (work-changes (aio-await (diff-hl-changes-from-buffer
+                                           (diff-hl-changes-buffer file backend)))))
             `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))
               (:working . ,work-changes))))
          ((eq state 'added)
@@ -544,13 +540,15 @@ contents as they are (or would be) after applying the changes in NEW."
       (setq old (cdr old)))
     ref))
 
-(defun diff-hl-process-wait (buf)
-  (let ((proc (get-buffer-process buf)))
-    (while (process-live-p proc)
-      (accept-process-output proc 0.01))))
+(aio-defun diff-hl-process-wait (buf)
+  (let ((aio-cb (aio-make-callback :once t)))
+    (vc-exec-after (car aio-cb)
+                   nil
+                   (get-buffer-process buf))
+    (aio-await (cdr aio-cb))))
 
-(defun diff-hl-changes-from-buffer (buf)
-  (diff-hl-process-wait buf)
+(aio-defun diff-hl-changes-from-buffer (buf)
+  (aio-await (diff-hl-process-wait buf))
   (with-current-buffer buf
     (let (res)
       (goto-char (point-min))
@@ -592,33 +590,14 @@ contents as they are (or would be) after applying the changes in NEW."
   "Updates the diff-hl overlay."
   (setq diff-hl-timer nil)
   (if (diff-hl--use-async-p)
-      ;; TODO: debounce if a thread is already running.
-      (let ((buf (current-buffer))
-            (temp-buffer
-             (if (< emacs-major-version 28)
-                 (generate-new-buffer " *temp*")
-               (generate-new-buffer " *temp*" t))))
-        ;; Switch buffer temporarily, to "unlock" it for other threads.
-        (with-current-buffer temp-buffer
-          (make-thread
-           (lambda ()
-             (kill-buffer temp-buffer)
-             (when (buffer-live-p buf)
-               (set-buffer buf)
-               (diff-hl--update-safe)))
-           "diff-hl--update-safe")))
-    (diff-hl--update)))
+      ;; async version.
+      ;; Add #'funcall as callback to ensure that errors are reported.
+      (aio-listen (diff-hl--update) #'funcall)
+    ;; sync version.
+    (aio-wait-for (diff-hl--update))))
 
 (defun diff-hl-with-editor-p (_dir)
   (bound-and-true-p with-editor-mode))
-
-(defun diff-hl--update-safe ()
-  "Updates the diff-hl overlay. It handles and logs when an error is signaled."
-  (condition-case err
-      (diff-hl--update)
-    (error
-     (message "An error occurred in diff-hl--update: %S" err)
-     nil)))
 
 (defun diff-hl--update-overlays (changes reuse)
   "Updates the diff-hl overlays based on CHANGES.
@@ -666,20 +645,23 @@ Return a list of line overlays used."
                 (overlay-put h 'insert-behind-hooks hook)))))))
     (nreverse ovls)))
 
-(defun diff-hl--update ()
-  (let* ((cc (diff-hl-changes))
+(aio-defun diff-hl--update ()
+  (let* ((this-buffer (current-buffer))
+         (cc (aio-await (diff-hl-changes)))
          (ref-changes (assoc-default :reference cc))
          (changes (assoc-default :working cc))
          reuse)
-    (diff-hl-remove-overlays)
-    (let ((diff-hl-highlight-function
-           diff-hl-highlight-reference-function)
-          (diff-hl-fringe-face-function
-           diff-hl-fringe-reference-face-function))
-      (setq reuse (diff-hl--update-overlays ref-changes nil)))
-    (diff-hl--update-overlays changes reuse)
-    (when (not (or changes ref-changes))
-      (diff-hl--autohide-margin))))
+    (when (buffer-live-p this-buffer)
+      (with-current-buffer this-buffer
+        (diff-hl-remove-overlays)
+        (let ((diff-hl-highlight-function
+               diff-hl-highlight-reference-function)
+              (diff-hl-fringe-face-function
+               diff-hl-fringe-reference-face-function))
+          (setq reuse (diff-hl--update-overlays ref-changes nil)))
+        (diff-hl--update-overlays changes reuse)
+        (when (not (or changes ref-changes))
+          (diff-hl--autohide-margin))))))
 
 (defun diff-hl--autohide-margin ()
   (let ((width-var (intern (format "%s-margin-width" diff-hl-side))))
