@@ -399,7 +399,7 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (declare-function vc-hg-command "vc-hg")
 (declare-function vc-bzr-command "vc-bzr")
 
-(defun diff-hl-changes-buffer (file backend &optional new-rev)
+(aio-defun diff-hl-changes-buffer (file backend &optional new-rev)
   (diff-hl-with-diff-switches
    (diff-hl-diff-against-reference file backend " *diff-hl* " new-rev)))
 
@@ -453,7 +453,7 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
            (not diff-hl-highlight-reference-function)
            (diff-hl-modified-p state))
           `((:working . ,(aio-await (diff-hl-changes-from-buffer
-                                     (diff-hl-changes-buffer file backend))))))
+                                     (aio-await (diff-hl-changes-buffer file backend)))))))
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
@@ -461,12 +461,12 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                   (and (or diff-hl-reference-revision
                            hide-staged)
                        (aio-await (diff-hl-changes-from-buffer
-                                   (diff-hl-changes-buffer file backend (if hide-staged
+                                   (aio-await (diff-hl-changes-buffer file backend (if hide-staged
                                                                             'git-index
-                                                                          (diff-hl-head-revision backend)))))))
+                                                                          (diff-hl-head-revision backend))))))))
                  (diff-hl-reference-revision nil)
                  (work-changes (aio-await (diff-hl-changes-from-buffer
-                                           (diff-hl-changes-buffer file backend)))))
+                                           (aio-await (diff-hl-changes-buffer file backend))))))
             `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))
               (:working . ,work-changes))))
          ((eq state 'added)
@@ -1386,29 +1386,29 @@ the user should be returned."
                                         "/dev/shm/"
                                       temporary-file-directory))
 
-(defun diff-hl-diff-buffer-with-reference (file &optional dest-buffer backend context-lines)
+(aio-defun diff-hl-diff-buffer-with-reference (file &optional dest-buffer backend context-lines)
   "Compute the diff between the current buffer contents and reference in BACKEND.
 The diffs are computed in the buffer DEST-BUFFER. This requires
 the `diff-program' to be in your `exec-path'.
 CONTEXT-LINES is the size of the unified diff context, defaults to 0."
   (require 'diff)
   (vc-ensure-vc-buffer)
-  (save-current-buffer
-    (let* ((dest-buffer (or dest-buffer "*diff-hl-diff-buffer-with-reference*"))
-           (backend (or backend (vc-backend file)))
-           (temporary-file-directory diff-hl-temporary-directory)
-           (rev
-            (if (and (eq backend 'Git)
-                     (not diff-hl-reference-revision)
-                     (not diff-hl-show-staged-changes))
-                (diff-hl-git-index-revision
-                 file
-                 (diff-hl-git-index-object-name file))
-              (diff-hl-create-revision
-               file
-               (or (diff-hl-resolved-reference-revision backend)
-                   (diff-hl-working-revision file backend)))))
-           (switches (format "-U %d --strip-trailing-cr" (or context-lines 0))))
+  (let* ((dest-buffer (or dest-buffer "*diff-hl-diff-buffer-with-reference*"))
+         (backend (or backend (vc-backend file)))
+         (temporary-file-directory diff-hl-temporary-directory)
+         (rev
+          (if (and (eq backend 'Git)
+                   (not diff-hl-reference-revision)
+                   (not diff-hl-show-staged-changes))
+              (aio-await (diff-hl-git-index-revision
+                          file
+                          (aio-await (diff-hl-git-index-object-name file))))
+            (diff-hl-create-revision
+             file
+             (or (diff-hl-resolved-reference-revision backend)
+                 (diff-hl-working-revision file backend)))))
+         (switches (format "-U %d --strip-trailing-cr" (or context-lines 0))))
+    (save-current-buffer
       (diff-no-select rev (current-buffer) switches (not (diff-hl--use-async-p))
                       (get-buffer-create dest-buffer))
       ;; Function `diff-sentinel' adds a summary line, but that seems fine.
@@ -1453,33 +1453,43 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
      diff-hl-reference-revision)))
 
 ;; TODO: Cache based on .git/index's mtime, maybe.
-(defun diff-hl-git-index-object-name (file)
-  (with-temp-buffer
-    (vc-git-command (current-buffer) 0 file "ls-files" "-s")
-    (and
-     (goto-char (point-min))
-     (re-search-forward "^[0-9]+ \\([0-9a-f]+\\)" nil t)
-     (match-string-no-properties 1))))
+(aio-defun diff-hl-git-index-object-name (file)
+  (let ((temp-buf (generate-new-buffer " *temp*" t)))
+    (unwind-protect
+        (progn
+          (vc-git-command temp-buf (if (diff-hl--use-async-p) 'async 0) file "ls-files" "-s")
+          (aio-await (diff-hl-process-wait temp-buf))
+          (with-current-buffer temp-buf
+            (and
+             (goto-char (point-min))
+             (re-search-forward "^[0-9]+ \\([0-9a-f]+\\)" nil t)
+             (match-string-no-properties 1))))
+      (kill-buffer temp-buf))))
 
-(defun diff-hl-git-index-revision (file object-name)
+(aio-defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
                                                (concat ";" object-name)
                                                'manual))
         (filebuf (get-file-buffer file)))
     (unless (file-exists-p filename)
-      (with-current-buffer filebuf
-        (let ((coding-system-for-read 'no-conversion)
-              (coding-system-for-write 'no-conversion))
-          (condition-case nil
-              (with-temp-file filename
-                (let ((outbuf (current-buffer)))
-                  ;; Change buffer to be inside the repo.
-                  (with-current-buffer filebuf
-                    (vc-git-command outbuf 0 nil
-                                    "cat-file" "blob" object-name))))
-            (error
-             (when (file-exists-p filename)
-               (delete-file filename)))))))
+      (let ((coding-system-for-read 'no-conversion)
+            (coding-system-for-write 'no-conversion))
+        (condition-case nil
+            (let ((temp-buffer (generate-new-buffer " *temp file*" t)))
+              (unwind-protect
+                  (progn
+                    ;; Change buffer to be inside the repo.
+                    (with-current-buffer filebuf
+                      (vc-git-command temp-buffer (if (diff-hl--use-async-p) 'async 0) nil
+                                      "cat-file" "blob" object-name))
+                    (aio-await (diff-hl-process-wait outbuf))
+                    (with-current-buffer temp-buffer
+	              (write-region nil nil filename nil 0))
+                    )
+                (kill-buffer temp-buffer)))
+          (error
+           (when (file-exists-p filename)
+             (delete-file filename))))))
     filename))
 
 ;;;###autoload
