@@ -442,7 +442,7 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                           (diff-hl--use-async-p)))))))
   buffer)
 
-(aio-defun diff-hl-changes ()
+(aio-defun diff-hl-changes-async ()
   (let* ((file buffer-file-name)
          (backend (vc-backend file))
          (hide-staged (and (eq backend 'Git) (not diff-hl-show-staged-changes))))
@@ -452,25 +452,28 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
          ((and
            (not diff-hl-highlight-reference-function)
            (diff-hl-modified-p state))
-          `((:working . ,(aio-await (diff-hl-changes-from-buffer
-                                     (diff-hl-changes-buffer file backend))))))
+          `((:working . ,(diff-hl-changes-from-buffer
+                          (aio-await (diff-hl-process-wait-async
+                                      (diff-hl-changes-buffer file backend)))))))
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
-          (let* ((ref-changes-promise
+          (let* ((ref-changes-diff-buf
                   (and (or diff-hl-reference-revision
                            hide-staged)
-                       (diff-hl-changes-from-buffer
-                        (diff-hl-changes-buffer file backend
+                       (diff-hl-changes-buffer file backend
                                                 (if hide-staged
                                                     'git-index
                                                   (diff-hl-head-revision backend))
-                                                " *diff-hl-reference* "))))
+                                                " *diff-hl-reference* ")))
                  (diff-hl-reference-revision nil)
-                 (work-changes-promise (diff-hl-changes-from-buffer
-                                        (diff-hl-changes-buffer file backend))))
-            `((:reference . ,(diff-hl-adjust-changes (aio-await ref-changes-promise)
-                                                     (aio-await work-changes-promise)))
+                 (work-changes-diff-buf (diff-hl-changes-buffer file backend))
+                 (ref-changes (and ref-changes-diff-buf
+                                   (diff-hl-changes-from-buffer
+                                    (aio-await (diff-hl-process-wait-async ref-changes-diff-buf)))))
+                 (work-changes (diff-hl-changes-from-buffer
+                                (aio-await (diff-hl-process-wait-async work-changes-diff-buf)))))
+            `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))
               (:working . ,work-changes))))
          ((eq state 'added)
           `((:working . ((1 ,(line-number-at-pos (point-max)) 0 insert)))))
@@ -543,15 +546,15 @@ contents as they are (or would be) after applying the changes in NEW."
       (setq old (cdr old)))
     ref))
 
-(aio-defun diff-hl-process-wait (buf)
+(aio-defun diff-hl-process-wait-async (buf)
   (let ((aio-cb (aio-make-callback :once t)))
     (vc-exec-after (car aio-cb)
                    nil
                    (get-buffer-process buf))
-    (aio-await (cdr aio-cb))))
+    (aio-await (cdr aio-cb))
+    buf))
 
-(aio-defun diff-hl-changes-from-buffer (buf)
-  (aio-await (diff-hl-process-wait buf))
+(defun diff-hl-changes-from-buffer (buf)
   (with-current-buffer buf
     (let (res)
       (goto-char (point-min))
@@ -595,9 +598,9 @@ contents as they are (or would be) after applying the changes in NEW."
   (if (diff-hl--use-async-p)
       ;; async version.
       ;; Add #'funcall as callback to ensure that errors are reported.
-      (aio-listen (diff-hl--update) #'funcall)
+      (aio-listen (diff-hl--update-async) #'funcall)
     ;; sync version.
-    (aio-wait-for (diff-hl--update))))
+    (aio-wait-for (diff-hl--update-async))))
 
 (defun diff-hl-with-editor-p (_dir)
   (bound-and-true-p with-editor-mode))
@@ -648,9 +651,9 @@ Return a list of line overlays used."
                 (overlay-put h 'insert-behind-hooks hook)))))))
     (nreverse ovls)))
 
-(aio-defun diff-hl--update ()
+(aio-defun diff-hl--update-async ()
   (let* ((this-buffer (current-buffer))
-         (cc (aio-await (diff-hl-changes)))
+         (cc (aio-await (diff-hl-changes-async)))
          (ref-changes (assoc-default :reference cc))
          (changes (assoc-default :working cc))
          reuse)
