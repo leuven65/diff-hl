@@ -399,9 +399,9 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (declare-function vc-hg-command "vc-hg")
 (declare-function vc-bzr-command "vc-bzr")
 
-(defun diff-hl-changes-buffer (file backend &optional new-rev)
+(defun diff-hl-changes-buffer (file backend &optional new-rev bufname)
   (diff-hl-with-diff-switches
-   (diff-hl-diff-against-reference file backend " *diff-hl* " new-rev)))
+   (diff-hl-diff-against-reference file backend (or bufname " *diff-hl* ") new-rev)))
 
 (defun diff-hl-diff-against-reference (file backend buffer &optional new-rev)
   (cond
@@ -461,9 +461,11 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                   (and (or diff-hl-reference-revision
                            hide-staged)
                        (diff-hl-changes-from-buffer
-                        (diff-hl-changes-buffer file backend (if hide-staged
-                                                                 'git-index
-                                                               (diff-hl-head-revision backend))))))
+                        (diff-hl-changes-buffer file backend
+                                                (if hide-staged
+                                                    'git-index
+                                                  (diff-hl-head-revision backend))
+                                                " *diff-hl-reference* "))))
                  (diff-hl-reference-revision nil)
                  (work-changes-promise (diff-hl-changes-from-buffer
                                         (diff-hl-changes-buffer file backend))))
@@ -891,7 +893,7 @@ that file, if it's present."
     (widen)
     (vc-buffer-sync)
     (let* ((diff-buffer (get-buffer-create
-                         (generate-new-buffer-name "*diff-hl*")))
+                         (generate-new-buffer-name "*diff-hl-revert*")))
            (buffer (current-buffer))
            (diff-hl-update-async nil)
            (line (save-excursion
