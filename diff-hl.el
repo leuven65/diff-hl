@@ -457,17 +457,18 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
-          (let* ((ref-changes
+          (let* ((ref-changes-promise
                   (and (or diff-hl-reference-revision
                            hide-staged)
-                       (aio-await (diff-hl-changes-from-buffer
-                                   (diff-hl-changes-buffer file backend (if hide-staged
-                                                                            'git-index
-                                                                          (diff-hl-head-revision backend)))))))
+                       (diff-hl-changes-from-buffer
+                        (diff-hl-changes-buffer file backend (if hide-staged
+                                                                 'git-index
+                                                               (diff-hl-head-revision backend))))))
                  (diff-hl-reference-revision nil)
-                 (work-changes (aio-await (diff-hl-changes-from-buffer
-                                           (diff-hl-changes-buffer file backend)))))
-            `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))
+                 (work-changes-promise (diff-hl-changes-from-buffer
+                                        (diff-hl-changes-buffer file backend))))
+            `((:reference . ,(diff-hl-adjust-changes (aio-await ref-changes-promise)
+                                                     (aio-await work-changes-promise)))
               (:working . ,work-changes))))
          ((eq state 'added)
           `((:working . ((1 ,(line-number-at-pos (point-max)) 0 insert)))))
