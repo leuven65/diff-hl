@@ -548,9 +548,8 @@ contents as they are (or would be) after applying the changes in NEW."
 
 (aio-defun diff-hl-process-wait-async (buf)
   (let ((aio-cb (aio-make-callback :once t)))
-    (vc-exec-after (car aio-cb)
-                   nil
-                   (get-buffer-process buf))
+    (with-current-buffer buf
+      (vc-exec-after (car aio-cb)))
     (aio-await (cdr aio-cb))
     buf))
 
