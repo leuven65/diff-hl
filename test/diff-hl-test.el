@@ -28,7 +28,7 @@
 (require 'ert)
 (require 'vc-git)
 
-(defvar diff-hl-test-source-file "test/empty")
+(defvar diff-hl-test-source-file (expand-file-name "test/empty"))
 
 (defvar diff-hl-test-initial-content nil)
 
