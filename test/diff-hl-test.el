@@ -165,7 +165,7 @@
     (save-buffer)
     (let ((diff-hl-show-staged-changes t))
       (should
-       (equal (diff-hl-changes)
+       (equal (aio-wait-for (diff-hl-changes-async))
               '((:reference . nil)
                 (:working
                  .
@@ -173,7 +173,7 @@
                   (12 1 0 insert)))))))
     (let ((diff-hl-show-staged-changes nil))
       (should
-       (equal (diff-hl-changes)
+       (equal (aio-wait-for (diff-hl-changes-async))
               '((:reference . ((1 1 0 insert)))
                 (:working . ((12 1 0 insert)))))))))
 
