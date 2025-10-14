@@ -50,6 +50,7 @@
 
 (defun diff-hl-flydiff-update ()
   (unless (or
+           diff-hl--update-busy ; no diff-hl-update is running
            (not diff-hl-mode)
            (eq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
            (not buffer-file-name)

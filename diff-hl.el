@@ -592,15 +592,25 @@ contents as they are (or would be) after applying the changes in NEW."
 
 (defvar diff-hl-timer nil)
 
+(defvar diff-hl--update-busy nil
+  "make sure there is only one diff-hl-update at a time")
+
 (defun diff-hl-update ()
   "Updates the diff-hl overlay."
   (setq diff-hl-timer nil)
-  (if (diff-hl--use-async-p)
-      ;; async version.
-      ;; Add #'funcall as callback to ensure that errors are reported.
-      (aio-listen (diff-hl--update-async) #'funcall)
-    ;; sync version.
-    (aio-wait-for (diff-hl--update-async))))
+  (if diff-hl--update-busy
+      (message "diff-hl-update: skipped as previous update already in progress")
+    (setq diff-hl--update-busy t)
+    (let ((promise (diff-hl--update-async)))
+      (aio-listen promise
+                  (lambda (result)
+                    (unwind-protect
+                        ;; ensure that errors are reported.
+                        (funcall result)
+                      (setq diff-hl--update-busy nil))))
+      (unless (diff-hl--use-async-p)
+        ;; sync version.
+        (aio-wait-for promise)))))
 
 (defun diff-hl-with-editor-p (_dir)
   (bound-and-true-p with-editor-mode))
