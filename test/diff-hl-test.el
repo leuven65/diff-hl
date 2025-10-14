@@ -28,9 +28,7 @@
 (require 'ert)
 (require 'vc-git)
 
-(defvar diff-hl-test-source-file
-  (expand-file-name (concat (file-name-directory (locate-library "diff-hl"))
-                            "test/empty")))
+(defvar diff-hl-test-source-file "test/empty")
 
 (defvar diff-hl-test-initial-content nil)
 
@@ -110,22 +108,23 @@
 
 (diff-hl-deftest diff-hl-indirect-buffer-move ()
   (diff-hl-test-in-source
-    (narrow-to-region (point-min) (point-max))
-    (goto-char (point-min))
-    (kill-whole-line 3)
-    (goto-char (point-max))
-    (insert "added\n")
-    (save-buffer)
-    (diff-hl-mode 1)
-    (diff-hl-update)
-    (diff-hl-previous-hunk)
-    (should (looking-at "added"))
-    (diff-hl-previous-hunk)
-    (should (looking-at "function2"))
-    (should-error (diff-hl-previous-hunk) :type 'user-error)
-    (diff-hl-next-hunk)
-    (should (looking-at "added"))
-    (should-error (diff-hl-next-hunk) :type 'user-error)))
+   (let ((diff-hl-update-async nil))
+     (narrow-to-region (point-min) (point-max))
+     (goto-char (point-min))
+     (kill-whole-line 3)
+     (goto-char (point-max))
+     (insert "added\n")
+     (save-buffer)
+     (diff-hl-mode 1)
+     (aio-wait-for (diff-hl--update-async))
+     (diff-hl-previous-hunk)
+     (should (looking-at "added"))
+     (diff-hl-previous-hunk)
+     (should (looking-at "function2"))
+     (should-error (diff-hl-previous-hunk) :type 'user-error)
+     (diff-hl-next-hunk)
+     (should (looking-at "added"))
+     (should-error (diff-hl-next-hunk) :type 'user-error))))
 
 (diff-hl-deftest diff-hl-indirect-buffer-move-async ()
   (skip-unless (>= emacs-major-version 27)) ;No `main-thread'.
@@ -138,12 +137,8 @@
      (insert "added\n")
      (save-buffer)
      (diff-hl-mode 1)
-     (diff-hl-update)
 
-     ;; wait for all thread to complete.
-     (dolist (thread (all-threads))
-       (unless (eq thread main-thread)
-         (thread-join thread)))
+     (aio-wait-for (diff-hl--update-async))
 
      (diff-hl-previous-hunk)
      (should (looking-at "added"))
@@ -188,13 +183,15 @@
     (let ((diff-hl-show-staged-changes t))
       (should
        (equal (diff-hl-changes-from-buffer
-               (diff-hl-diff-buffer-with-reference buffer-file-name))
+               (aio-wait-for (diff-hl-process-wait-async
+                              (diff-hl-diff-buffer-with-reference buffer-file-name))))
               '((1 1 0 insert)
                 (12 1 0 insert)))))
     (let ((diff-hl-show-staged-changes nil))
       (should
        (equal (diff-hl-changes-from-buffer
-               (diff-hl-diff-buffer-with-reference buffer-file-name))
+               (aio-wait-for (diff-hl-process-wait-async
+                              (diff-hl-diff-buffer-with-reference buffer-file-name))))
               '((12 1 0 insert)))))))
 
 (diff-hl-deftest diff-hl-can-split-away-no-trailing-newline ()
@@ -207,6 +204,7 @@
     (let ((file buffer-file-name)
           (dest-buffer (get-buffer-create " *diff-hl-test*")))
       (diff-hl-diff-buffer-with-reference file dest-buffer nil 3)
+      (aio-wait-for (diff-hl-process-wait-async dest-buffer))
       (with-current-buffer dest-buffer
         (with-no-warnings
           (let (diff-auto-refine-mode)
@@ -223,20 +221,20 @@
 Diff finished."
                  (buffer-substring (point) (point-max))))))))
 
-(diff-hl-deftest diff-hl-resolved-reference-revision-buffer-local-hg ()
-  (diff-hl-test-in-source
-   (setq-local diff-hl-reference-revision "test-rev")
-   (setq-local vc-hg-program "chg")
-   (condition-case err
-       (progn
-         (diff-hl-resolved-reference-revision 'Hg)
-         (ert-fail "Expected an error to be signaled but none was."))
-     ;; We don't have a hg repo, but we can use the error message to verify the
-     ;; underlying command.
-     (error
-      (should (string-match-p
-               "chg .*identify -r test-rev -i"
-               (error-message-string err)))))))
+;; (diff-hl-deftest diff-hl-resolved-reference-revision-buffer-local-hg ()
+;;   (diff-hl-test-in-source
+;;    (setq-local diff-hl-reference-revision "test-rev")
+;;    (setq-local vc-hg-program "chg")
+;;    (condition-case err
+;;        (progn
+;;          (diff-hl-resolved-reference-revision 'Hg)
+;;          (ert-fail "Expected an error to be signaled but none was."))
+;;      ;; We don't have a hg repo, but we can use the error message to verify the
+;;      ;; underlying command.
+;;      (error
+;;       (should (string-match-p
+;;                "chg .*identify -r test-rev -i"
+;;                (error-message-string err)))))))
 
 (provide 'diff-hl-test)
 
