@@ -183,15 +183,17 @@
     (let ((diff-hl-show-staged-changes t))
       (should
        (equal (diff-hl-changes-from-buffer
-               (aio-wait-for (diff-hl-process-wait-async
-                              (diff-hl-diff-buffer-with-reference buffer-file-name))))
+               (let ((diff-buf (diff-hl-diff-buffer-with-reference buffer-file-name)))
+                 (aio-wait-for (diff-hl--process-buffer-promise diff-buf))
+                 diff-buf))
               '((1 1 0 insert)
                 (12 1 0 insert)))))
     (let ((diff-hl-show-staged-changes nil))
       (should
        (equal (diff-hl-changes-from-buffer
-               (aio-wait-for (diff-hl-process-wait-async
-                              (diff-hl-diff-buffer-with-reference buffer-file-name))))
+               (let ((diff-buf (diff-hl-diff-buffer-with-reference buffer-file-name)))
+                 (aio-wait-for (diff-hl--process-buffer-promise diff-buf))
+                 diff-buf))
               '((12 1 0 insert)))))))
 
 (diff-hl-deftest diff-hl-can-split-away-no-trailing-newline ()
@@ -204,7 +206,7 @@
     (let ((file buffer-file-name)
           (dest-buffer (get-buffer-create " *diff-hl-test*")))
       (diff-hl-diff-buffer-with-reference file dest-buffer nil 3)
-      (aio-wait-for (diff-hl-process-wait-async dest-buffer))
+      (aio-wait-for (diff-hl--process-buffer-promise dest-buffer))
       (with-current-buffer dest-buffer
         (with-no-warnings
           (let (diff-auto-refine-mode)

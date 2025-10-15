@@ -399,9 +399,12 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (declare-function vc-hg-command "vc-hg")
 (declare-function vc-bzr-command "vc-bzr")
 
-(defun diff-hl-changes-buffer (file backend &optional new-rev bufname)
+(defun diff-hl-changes-buffer (file backend &optional new-rev buf-base-name)
   (diff-hl-with-diff-switches
-   (diff-hl-diff-against-reference file backend (or bufname " *diff-hl* ") new-rev)))
+   (diff-hl-diff-against-reference file backend
+                                   ;; avoid reusing buffer, it will cause issue.
+                                   (generate-new-buffer (or buf-base-name " *diff-hl* "))
+                                   new-rev)))
 
 (defun diff-hl-diff-against-reference (file backend buffer &optional new-rev)
   (cond
@@ -442,6 +445,28 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                           (diff-hl--use-async-p)))))))
   buffer)
 
+(defvar diff-hl--diff-buffer-list nil
+  "Buffers created by `diff-hl-changes-buffer' and not yet killed.")
+
+(defsubst diff-hl--process-buffer-promise (buf)
+  (let ((aio-cb (aio-make-callback :once t)))
+    (with-current-buffer buf
+      (vc-exec-after (car aio-cb)))
+    ;; return promise
+    (cdr aio-cb)))
+
+(aio-defun diff-hl-changes-from-buffer-and-kill-async (buf)
+  (when (buffer-live-p buf)
+    ;; add buffer to the list
+    (push buf diff-hl--diff-buffer-list)
+    (unwind-protect
+        (progn (aio-await (diff-hl--process-buffer-promise buf))
+               (diff-hl-changes-from-buffer buf))
+      ;; kill the buffer in any case
+      (kill-buffer buf)
+      ;; and remove it from the list
+      (setq diff-hl--diff-buffer-list (delq buf diff-hl--diff-buffer-list)))))
+
 (aio-defun diff-hl-changes-async ()
   (let* ((file buffer-file-name)
          (backend (vc-backend file))
@@ -452,9 +477,8 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
          ((and
            (not diff-hl-highlight-reference-function)
            (diff-hl-modified-p state))
-          `((:working . ,(diff-hl-changes-from-buffer
-                          (aio-await (diff-hl-process-wait-async
-                                      (diff-hl-changes-buffer file backend)))))))
+          `((:working . ,(aio-await (diff-hl-changes-from-buffer-and-kill-async
+                                     (diff-hl-changes-buffer file backend))))))
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
@@ -466,13 +490,10 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                                                     'git-index
                                                   (diff-hl-head-revision backend))
                                                 " *diff-hl-reference* ")))
-                 (diff-hl-reference-revision nil)
-                 (work-changes-diff-buf (diff-hl-changes-buffer file backend))
-                 (ref-changes (and ref-changes-diff-buf
-                                   (diff-hl-changes-from-buffer
-                                    (aio-await (diff-hl-process-wait-async ref-changes-diff-buf)))))
-                 (work-changes (diff-hl-changes-from-buffer
-                                (aio-await (diff-hl-process-wait-async work-changes-diff-buf)))))
+                 (work-changes-diff-buf (let ((diff-hl-reference-revision nil))
+                                          (diff-hl-changes-buffer file backend)))
+                 (ref-changes (aio-await (diff-hl-changes-from-buffer-and-kill-async ref-changes-diff-buf)))
+                 (work-changes (aio-await (diff-hl-changes-from-buffer-and-kill-async work-changes-diff-buf))))
             `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))
               (:working . ,work-changes))))
          ((eq state 'added)
@@ -546,13 +567,6 @@ contents as they are (or would be) after applying the changes in NEW."
       (setq old (cdr old)))
     ref))
 
-(aio-defun diff-hl-process-wait-async (buf)
-  (let ((aio-cb (aio-make-callback :once t)))
-    (with-current-buffer buf
-      (vc-exec-after (car aio-cb)))
-    (aio-await (cdr aio-cb))
-    buf))
-
 (defun diff-hl-changes-from-buffer (buf)
   (with-current-buffer buf
     (let (res)
@@ -594,12 +608,13 @@ contents as they are (or would be) after applying the changes in NEW."
 (defun diff-hl-update ()
   "Updates the diff-hl overlay."
   (setq diff-hl-timer nil)
-  (if (diff-hl--use-async-p)
-      ;; async version.
-      ;; Add #'funcall as callback to ensure that errors are reported.
-      (aio-listen (diff-hl--update-async) #'funcall)
-    ;; sync version.
-    (aio-wait-for (diff-hl--update-async))))
+  (let ((promise (diff-hl--update-async)))
+    (if (diff-hl--use-async-p)
+        ;; async version.
+        ;; Add #'funcall as callback to ensure that errors are reported.
+        (aio-listen promise #'funcall)
+      ;; sync version.
+      (aio-wait-for promise))))
 
 (defun diff-hl-with-editor-p (_dir)
   (bound-and-true-p with-editor-mode))

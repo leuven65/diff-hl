@@ -40,13 +40,13 @@
 (defvar diff-hl-flydiff-timer nil)
 (make-variable-buffer-local 'diff-hl-flydiff-modified-tick)
 
-(defun diff-hl-flydiff-changes-buffer (file backend &optional new-rev bufname)
+(defun diff-hl-flydiff-changes-buffer (file backend &optional new-rev buf-base-name)
   (setq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
-  (let ((bufname (or bufname " *diff-hl-diff*")))
+  (let ((diff-buf (generate-new-buffer (or buf-base-name " *diff-hl-diff*"))))
     (if new-rev
         (diff-hl-with-diff-switches
-         (diff-hl-diff-against-reference file backend bufname new-rev))
-      (diff-hl-diff-buffer-with-reference file bufname backend))))
+         (diff-hl-diff-against-reference file backend diff-buf new-rev))
+      (diff-hl-diff-buffer-with-reference file diff-buf backend))))
 
 (defun diff-hl-flydiff-update ()
   (unless (or
