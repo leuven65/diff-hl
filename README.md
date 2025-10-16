@@ -8,6 +8,9 @@ This feature is also known as "source control gutter indicators".
 
 In buffers controlled by Git, you can stage and unstage the changes.
 
+The diff related operations are executed asynchronously by using
+[aio](https://github.com/skeeto/emacs-aio), to avoid blocking the main thread.
+
 For the usage instructions and the list of commands, see the Commentary section
 inside the file.
 
@@ -32,10 +35,24 @@ The package also contains auxiliary modes:
 Usage
 =====
 
-Put this into your init script:
+For newer version of Emacs (>=29.1), put following setting to "init.el":
 
-```lisp
+```emacs-lisp
+(use-package diff-hl
+  :ensure t
+  :vc (:url "https://github.com/leuven65/diff-hl.git"
+            :branch "master"
+            :rev :newest)
+  :hook ((after-init . global-diff-hl-mode)
+         (after-init . diff-hl-flydiff-mode))
+  )
+```
+
+For old version, install the package manually and add following settting to "init.el":
+```emacs-lisp
+(require 'diff-hl) 
 (global-diff-hl-mode)
+(diff-hl-flydiff-mode)
 ```
 
 You must also ensure that VC is enabled (e.g. `vc-handled-backends` is
