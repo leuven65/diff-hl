@@ -42,7 +42,7 @@
 
 (defun diff-hl-flydiff-changes-buffer (file backend &optional new-rev buf-base-name)
   (setq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
-  (let ((diff-buf (generate-new-buffer (or buf-base-name " *diff-hl-diff*"))))
+  (let ((diff-buf (generate-new-buffer (or buf-base-name " *diff-hl-flydiff*"))))
     (if new-rev
         (diff-hl-with-diff-switches
          (diff-hl-diff-against-reference file backend diff-buf new-rev))
