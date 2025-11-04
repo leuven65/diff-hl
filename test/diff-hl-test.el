@@ -27,6 +27,7 @@
 (require 'subr-x) ;; string-trim
 (require 'ert)
 (require 'vc-git)
+(require 'diff)
 
 (defvar diff-hl-test-source-file (expand-file-name "test/empty"))
 

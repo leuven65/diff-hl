@@ -70,6 +70,7 @@
   (require 'vc-git)
   (require 'vc-hg)
   (require 'face-remap)
+  (require 'diff)
   (declare-function project-buffers 'project)
   (declare-function project-name 'project)
   (declare-function project-roots 'project)
@@ -1431,7 +1432,6 @@ the user should be returned."
 The diffs are computed in the buffer DEST-BUFFER. This requires
 the `diff-program' to be in your `exec-path'.
 CONTEXT-LINES is the size of the unified diff context, defaults to 0."
-  (require 'diff)
   (vc-ensure-vc-buffer)
   (save-current-buffer
     (let* ((dest-buffer (or dest-buffer "*diff-hl-diff-buffer-with-reference*"))
@@ -1456,7 +1456,7 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                       (get-buffer-create dest-buffer))
       ;; Function `diff-sentinel' adds a summary line, but that seems fine.
       ;; In all commands which use exact text we call it synchronously.
-      (get-buffer-create dest-buffer))))
+      (get-buffer dest-buffer))))
 
 (declare-function vc-jj--process-lines "vc-jj")
 

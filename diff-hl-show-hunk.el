@@ -38,6 +38,7 @@
 
 (require 'diff-hl-inline-popup)
 (require 'diff-hl)
+(require 'diff)
 
 (defvar diff-hl-show-hunk-mouse-mode-map
   (let ((map (make-sparse-keymap)))
