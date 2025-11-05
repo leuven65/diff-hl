@@ -66,21 +66,12 @@
 (require 'aio)
 
 (eval-when-compile
-  (unless (macrop 'static-if)
-    (defmacro static-if (condition then-form &rest else-forms)
-      (declare (indent 2)
-               (debug (sexp sexp &rest sexp)))
-      (if (eval condition lexical-binding)
-          then-form
-        (cons 'progn else-forms))))
-
   (require 'cl-lib)
   (require 'vc-git)
   (require 'vc-hg)
   (require 'face-remap)
   (require 'diff)
-  (static-if (>= emacs-major-version 28)
-      (require 'project))
+  (require 'project)
 
   (declare-function vc-bzr-command "vc-bzr")
   (declare-function magit-toplevel "magit-git")
@@ -94,6 +85,14 @@
   (declare-function vc-git-command "vc-git")
 
   (defvar vc-sentinel-movepoint)
+
+  (unless (macrop 'static-if)
+    (defmacro static-if (condition then-form &rest else-forms)
+      (declare (indent 2)
+               (debug (sexp sexp &rest sexp)))
+      (if (eval condition lexical-binding)
+          then-form
+        (cons 'progn else-forms))))  
   )
 
 (defgroup diff-hl nil
@@ -430,11 +429,16 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                ;; Diffing against an older revision.
                diff-hl-reference-revision))))
 
+(defsubst diff-hl-generate-new-buffer (buf-base-name &optional inhibit-buffer-hooks)
+  (static-if (>= emacs-major-version 28)
+      (generate-new-buffer buf-base-name inhibit-buffer-hooks)
+    (generate-new-buffer buf-base-name)))
+
 (defun diff-hl-changes-buffer (file backend &optional new-rev buf-base-name)
   (diff-hl-with-diff-switches
    (diff-hl-diff-against-reference file backend
                                    ;; avoid reusing buffer, it will cause issue.
-                                   (generate-new-buffer (or buf-base-name " *diff-hl*") t)
+                                   (diff-hl-generate-new-buffer (or buf-base-name " *diff-hl*") t)
                                    new-rev)))
 
 (defun diff-hl-diff-against-reference (file backend buffer &optional new-rev)
