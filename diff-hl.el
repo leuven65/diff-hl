@@ -66,15 +66,22 @@
 (require 'aio)
 
 (eval-when-compile
+  (unless (macrop 'static-if)
+    (defmacro static-if (condition then-form &rest else-forms)
+      (declare (indent 2)
+               (debug (sexp sexp &rest sexp)))
+      (if (eval condition lexical-binding)
+          then-form
+        (cons 'progn else-forms))))
+
   (require 'cl-lib)
   (require 'vc-git)
   (require 'vc-hg)
   (require 'face-remap)
   (require 'diff)
+  (static-if (>= emacs-major-version 28)
+      (require 'project))
 
-  (declare-function project-buffers "project")
-  (declare-function project-name "project")
-  (declare-function project-roots "project")
   (declare-function vc-bzr-command "vc-bzr")
   (declare-function magit-toplevel "magit-git")
   (declare-function magit-git-items "magit-git")
@@ -86,10 +93,6 @@
   (declare-function vc-git--rev-parse "vc-git")
   (declare-function vc-git-command "vc-git")
 
-  (defvar vc-svn-diff-switches)
-  (defvar vc-fossil-diff-switches)
-  (defvar vc-jj-diff-switches)
-  (defvar vc-diff-switches)
   (defvar vc-sentinel-movepoint)
   )
 
