@@ -71,10 +71,25 @@
   (require 'vc-hg)
   (require 'face-remap)
   (require 'diff)
+
   (declare-function project-buffers 'project)
   (declare-function project-name 'project)
   (declare-function project-roots 'project)
-  (declare-function smartrep-define-key 'smartrep))
+  (declare-function smartrep-define-key 'smartrep)
+  (declare-function vc-bzr-command "vc-bzr")
+  (declare-function magit-toplevel "magit-git")
+  (declare-function magit-git-items "magit-git")
+  (declare-function diff-no-select "diff")
+  (declare-function vc-jj--process-lines "vc-jj")
+  (declare-function vc-annotate-extract-revision-at-line "vc-annotate")
+  (declare-function diff-hl-amend-mode "diff-hl-amend")
+
+  (defvar vc-svn-diff-switches)
+  (defvar vc-fossil-diff-switches)
+  (defvar vc-jj-diff-switches)
+  (defvar vc-diff-switches)
+  (defvar vc-sentinel-movepoint)
+  )
 
 (defgroup diff-hl nil
   "VC diff highlighting on the side of a window"
@@ -376,10 +391,6 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
     (ignored 'diff-hl-bmp-i)
     (t (intern (format "diff-hl-bmp-%s" type)))))
 
-(defvar vc-svn-diff-switches)
-(defvar vc-fossil-diff-switches)
-(defvar vc-jj-diff-switches)
-
 (defmacro diff-hl-with-diff-switches (body)
   `(let ((vc-git-diff-switches
           ;; https://github.com/dgutov/diff-hl/issues/67
@@ -408,16 +419,11 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                ;; Diffing against an older revision.
                diff-hl-reference-revision))))
 
-(declare-function vc-git-command "vc-git")
-(declare-function vc-git--rev-parse "vc-git")
-(declare-function vc-hg-command "vc-hg")
-(declare-function vc-bzr-command "vc-bzr")
-
 (defun diff-hl-changes-buffer (file backend &optional new-rev buf-base-name)
   (diff-hl-with-diff-switches
    (diff-hl-diff-against-reference file backend
                                    ;; avoid reusing buffer, it will cause issue.
-                                   (generate-new-buffer (or buf-base-name " *diff-hl* "))
+                                   (generate-new-buffer (or buf-base-name " *diff-hl*") t)
                                    new-rev)))
 
 (defun diff-hl-diff-against-reference (file backend buffer &optional new-rev)
@@ -762,7 +768,6 @@ Return a list of line overlays used."
         (diff-hl-update)))))
 
 (defun diff-hl-diff-goto-hunk-1 (historic rev1)
-  (defvar vc-sentinel-movepoint)
   (vc-buffer-sync)
   (let* ((line (line-number-at-pos))
          (buffer (current-buffer))
@@ -803,7 +808,6 @@ reference revision."
 And if the current buffer is visiting a file, and it has changes, the diff
 buffer will show the position corresponding to its current line."
   (interactive)
-  (defvar vc-sentinel-movepoint)
   (with-current-buffer (or (buffer-base-buffer) (current-buffer))
     (let ((backend (vc-deduce-backend))
           (default-directory default-directory)
@@ -1326,9 +1330,6 @@ The value of this variable is a mode line template as in
      (put cmd 'repeat-map 'diff-hl-command-map)))
  diff-hl-command-map)
 
-(declare-function magit-toplevel "magit-git")
-(declare-function magit-git-items "magit-git")
-
 (define-obsolete-function-alias 'diff-hl-magit-pre-refresh 'ignore "1.11.0")
 
 (defun diff-hl-magit-post-refresh ()
@@ -1420,8 +1421,6 @@ the user should be returned."
                    (vc-call-backend (or backend (vc-backend file))
                                     'working-revision file)))
 
-(declare-function diff-no-select "diff")
-
 (defvar diff-hl-temporary-directory (if (and (eq system-type 'gnu/linux)
                                              (file-directory-p "/dev/shm/"))
                                         "/dev/shm/"
@@ -1457,8 +1456,6 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
       ;; Function `diff-sentinel' adds a summary line, but that seems fine.
       ;; In all commands which use exact text we call it synchronously.
       (get-buffer dest-buffer))))
-
-(declare-function vc-jj--process-lines "vc-jj")
 
 (defun diff-hl-resolved-revision (backend revision)
   (cond
@@ -1535,9 +1532,6 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                (not (memq major-mode (cdr diff-hl-global-modes))))
               (t (memq major-mode diff-hl-global-modes)))
     (turn-on-diff-hl-mode)))
-
-(declare-function vc-annotate-extract-revision-at-line "vc-annotate")
-(declare-function diff-hl-amend-mode "diff-hl-amend")
 
 ;;;###autoload
 (defun diff-hl-set-reference-rev (rev)
