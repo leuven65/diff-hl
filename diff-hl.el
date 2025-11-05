@@ -72,10 +72,9 @@
   (require 'face-remap)
   (require 'diff)
 
-  (declare-function project-buffers 'project)
-  (declare-function project-name 'project)
-  (declare-function project-roots 'project)
-  (declare-function smartrep-define-key 'smartrep)
+  (declare-function project-buffers "project")
+  (declare-function project-name "project")
+  (declare-function project-roots "project")
   (declare-function vc-bzr-command "vc-bzr")
   (declare-function magit-toplevel "magit-git")
   (declare-function magit-git-items "magit-git")
@@ -83,6 +82,9 @@
   (declare-function vc-jj--process-lines "vc-jj")
   (declare-function vc-annotate-extract-revision-at-line "vc-annotate")
   (declare-function diff-hl-amend-mode "diff-hl-amend")
+  (declare-function vc-hg-command "vc-hg")
+  (declare-function vc-git--rev-parse "vc-git")
+  (declare-function vc-git-command "vc-git")
 
   (defvar vc-svn-diff-switches)
   (defvar vc-fossil-diff-switches)
@@ -1307,6 +1309,7 @@ The value of this variable is a mode line template as in
                                     diff-hl-show-hunk-next))
 
 (when (require 'smartrep nil t)
+  (declare-function smartrep-define-key "smartrep")
   (let (smart-keys)
     (cl-labels ((scan (map)
                       (map-keymap
