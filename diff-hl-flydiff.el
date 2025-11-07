@@ -27,12 +27,13 @@
 
 (require 'diff-hl)
 (require 'diff)
+(require 'timeout)
 
 (defgroup diff-hl-flydiff nil
   "Highlight changes on the fly"
   :group 'diff-hl)
 
-(defcustom diff-hl-flydiff-delay 0.3
+(defcustom diff-hl-flydiff-delay 0.5
   "The idle delay in seconds before highlighting is updated."
   :type 'number)
 
@@ -76,7 +77,9 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
         (advice-add 'diff-hl-changes-buffer :around
                     #'diff-hl-flydiff-changes-buffer)
         (setq diff-hl-flydiff-timer
-              (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update)))
+              (run-with-idle-timer 0 t
+                                   (timeout-debounced-func 'diff-hl-flydiff-update
+                                                           diff-hl-flydiff-delay))))
 
     (advice-remove 'diff-hl-overlay-modified #'ignore)
 
