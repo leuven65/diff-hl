@@ -283,18 +283,6 @@ control (VC) backend. It's disabled in remote buffers, though, since it
 didn't work reliably in such during testing."
   :type 'boolean)
 
-;; Threads are not reliable with remote files, yet.
-(defcustom diff-hl-async-inhibit-functions nil
-  ;; (list #'diff-hl-with-editor-p
-  ;;       #'file-remote-p)
-  "Functions to call to check whether asychronous method should be disabled.
-
-When `diff-hl-update-async' is non-nil, these functions are called in turn
-and passed the value `default-directory'.
-
-If any returns non-nil, `diff-hl-update' will run synchronously anyway."
-  :type '(repeat :tag "Predicate" function))
-
 (defcustom diff-hl-update-debounce-delay 0.3
   "The idle delay in seconds before highlighting is updated."
   :type 'number)
@@ -426,6 +414,9 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
            ,@(when (boundp 'vc-disable-async-diff)
                '((vc-disable-async-diff t))))
        ,body)))
+
+(defsubst diff-hl--use-async-p ()
+  diff-hl-update-async)
 
 (defun diff-hl-modified-p (state)
   (or (memq state '(edited conflict))
@@ -640,12 +631,6 @@ contents as they are (or would be) after applying the changes in NEW."
                 (cl-incf line))
               (push (list line inserts deletes type) res)))))
       (nreverse res))))
-
-(defun diff-hl--use-async-p ()
-  (and diff-hl-update-async
-       (not
-        (run-hook-with-args-until-success 'diff-hl-async-inhibit-functions
-                                          default-directory))))
 
 (defun diff-hl-update ()
   "Updates the diff-hl overlay."
