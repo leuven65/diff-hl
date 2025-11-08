@@ -724,11 +724,10 @@ Return a list of line overlays used."
 (aio-defun diff-hl--update-async ()
   (let* ((this-buffer (current-buffer))
          (cc (aio-await (diff-hl-changes-async))))
-    (if (current-idle-time)
-        (diff-hl--update-ui cc this-buffer)
-      (run-with-idle-timer 0 nil
-                           #'diff-hl--update-ui
-                           cc this-buffer))))
+    (unless (or noninteractive ; for unit test which run in bacth mode
+                (current-idle-time))
+      (aio-await (aio-idle 0)))
+    (diff-hl--update-ui cc this-buffer)))
 
 (defun diff-hl--autohide-margin ()
   (let ((width-var (intern (format "%s-margin-width" diff-hl-side))))
@@ -751,12 +750,11 @@ Return a list of line overlays used."
     (setq diff-hl-update-debounce-timer
           (run-with-idle-timer diff-hl-update-debounce-delay nil
                                (lambda (buf)
-                                 (with-current-buffer buf
-                                   (cancel-timer diff-hl-update-debounce-timer)
-                                   (setq diff-hl-update-debounce-timer nil)
-                                   (when (buffer-live-p buf)
-                                     (with-current-buffer buf
-                                       (diff-hl-update)))))
+                                 (cancel-timer diff-hl-update-debounce-timer)
+                                 (setq diff-hl-update-debounce-timer nil)
+                                 (when (buffer-live-p buf)
+                                   (with-current-buffer buf
+                                     (diff-hl-update))))
                                (current-buffer)))))
 
 (defvar diff-hl-update-throttle-timer nil)
@@ -768,8 +766,9 @@ Return a list of line overlays used."
                           (lambda (buf)
                             (cancel-timer diff-hl-update-throttle-timer)
                             (setq diff-hl-update-throttle-timer nil)
-                            (with-current-buffer buf
-                              (diff-hl-update)))
+                            (when (buffer-live-p buf)
+                              (with-current-buffer buf
+                                (diff-hl-update))))
                           (current-buffer)))))
 
 (defun diff-hl-add-highlighting (type shape &optional ovl)
