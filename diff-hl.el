@@ -706,23 +706,29 @@ Return a list of line overlays used."
                 (overlay-put h 'insert-behind-hooks hook)))))))
     (nreverse ovls)))
 
+(defun diff-hl--update-ui (change-info buffer)
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (diff-hl-remove-overlays)
+      (let ((ref-changes (assoc-default :reference change-info))
+            (work-changes (assoc-default :working change-info)))
+        (diff-hl--update-overlays work-changes
+                                  (let ((diff-hl-highlight-function
+                                         diff-hl-highlight-reference-function)
+                                        (diff-hl-fringe-face-function
+                                         diff-hl-fringe-reference-face-function))
+                                    (diff-hl--update-overlays ref-changes nil)))
+        (unless (or work-changes ref-changes)
+          (diff-hl--autohide-margin))))))
+
 (aio-defun diff-hl--update-async ()
   (let* ((this-buffer (current-buffer))
-         (cc (aio-await (diff-hl-changes-async)))
-         (ref-changes (assoc-default :reference cc))
-         (changes (assoc-default :working cc))
-         reuse)
-    (when (buffer-live-p this-buffer)
-      (with-current-buffer this-buffer
-        (diff-hl-remove-overlays)
-        (let ((diff-hl-highlight-function
-               diff-hl-highlight-reference-function)
-              (diff-hl-fringe-face-function
-               diff-hl-fringe-reference-face-function))
-          (setq reuse (diff-hl--update-overlays ref-changes nil)))
-        (diff-hl--update-overlays changes reuse)
-        (when (not (or changes ref-changes))
-          (diff-hl--autohide-margin))))))
+         (cc (aio-await (diff-hl-changes-async))))
+    (if (current-idle-time)
+        (diff-hl--update-ui cc this-buffer)
+      (run-with-idle-timer 0 nil
+                           #'diff-hl--update-ui
+                           cc this-buffer))))
 
 (defun diff-hl--autohide-margin ()
   (let ((width-var (intern (format "%s-margin-width" diff-hl-side))))
