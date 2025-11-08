@@ -37,8 +37,9 @@
   :type 'number)
 
 (defvar diff-hl-flydiff-modified-tick nil)
-(defvar diff-hl-flydiff-timer nil)
 (make-variable-buffer-local 'diff-hl-flydiff-modified-tick)
+
+(defvar diff-hl-flydiff-timer nil)
 
 (defun diff-hl-flydiff-changes-buffer (old-fun file backend &optional new-rev buf-base-name)
   (setq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))

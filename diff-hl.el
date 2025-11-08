@@ -1431,11 +1431,36 @@ the user should be returned."
                  (delete-file filename))))))))
     filename))
 
-(defun diff-hl-working-revision (file &optional backend)
+(defsubst diff-hl-working-revision (file &optional backend)
   "Like vc-working-revision, but always up-to-date"
   (vc-file-setprop file 'vc-working-revision
                    (vc-call-backend (or backend (vc-backend file))
                                     'working-revision file)))
+
+;; TODO: Cache based on .git/index's mtime, maybe.
+(defsubst diff-hl-git-index-object-name (file)
+  (with-temp-buffer
+    (vc-git-command (current-buffer) 0 file "ls-files" "--format=%(objectname)")
+    (string-trim (buffer-string))))
+
+(defun diff-hl-git-index-revision (file object-name)
+  (let ((filename (diff-hl-make-temp-file-name file
+                                               (concat ";" object-name)
+                                               'manual)))
+    (unless (file-exists-p filename)
+      (let ((coding-system-for-read 'no-conversion)
+            (coding-system-for-write 'no-conversion))
+        (condition-case nil
+            (with-temp-file filename
+              (let ((outbuf (current-buffer)))
+                ;; Change buffer to be inside the repo.
+                (with-current-buffer (get-file-buffer file)
+                  (vc-git-command outbuf 0 nil
+                                  "cat-file" "blob" object-name))))
+          (error
+           (when (file-exists-p filename)
+             (delete-file filename))))))
+    filename))
 
 (defvar diff-hl-temporary-directory (if (and (eq system-type 'gnu/linux)
                                              (file-directory-p "/dev/shm/"))
@@ -1497,36 +1522,6 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                                      "-T" "change_id" "-n" "1"))))
    (t
     revision)))
-
-;; TODO: Cache based on .git/index's mtime, maybe.
-(defun diff-hl-git-index-object-name (file)
-  (with-temp-buffer
-    (vc-git-command (current-buffer) 0 file "ls-files" "-s")
-    (and
-     (goto-char (point-min))
-     (re-search-forward "^[0-9]+ \\([0-9a-f]+\\)" nil t)
-     (match-string-no-properties 1))))
-
-(defun diff-hl-git-index-revision (file object-name)
-  (let ((filename (diff-hl-make-temp-file-name file
-                                               (concat ";" object-name)
-                                               'manual))
-        (filebuf (get-file-buffer file)))
-    (unless (file-exists-p filename)
-      (with-current-buffer filebuf
-        (let ((coding-system-for-read 'no-conversion)
-              (coding-system-for-write 'no-conversion))
-          (condition-case nil
-              (with-temp-file filename
-                (let ((outbuf (current-buffer)))
-                  ;; Change buffer to be inside the repo.
-                  (with-current-buffer filebuf
-                    (vc-git-command outbuf 0 nil
-                                    "cat-file" "blob" object-name))))
-            (error
-             (when (file-exists-p filename)
-               (delete-file filename)))))))
-    filename))
 
 ;;;###autoload
 (defun turn-on-diff-hl-mode ()
