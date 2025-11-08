@@ -295,8 +295,12 @@ and passed the value `default-directory'.
 If any returns non-nil, `diff-hl-update' will run synchronously anyway."
   :type '(repeat :tag "Predicate" function))
 
-(defcustom diff-hl-update-delay 0.3
+(defcustom diff-hl-update-debounce-delay 0.3
   "The idle delay in seconds before highlighting is updated."
+  :type 'number)
+
+(defcustom diff-hl-update-throttle-delay 0.7
+  "Make `diff-hl-update' run no more frequently than once every THROTTLE seconds."
   :type 'number)
 
 (defvar diff-hl-reference-revision-projects-cache '()
@@ -730,24 +734,37 @@ Return a list of line overlays used."
       (dolist (win (get-buffer-window-list))
         (set-window-buffer win (current-buffer))))))
 
-(defvar diff-hl-timer nil)
+(defvar diff-hl-update-debounce-timer nil)
 
 (defun diff-hl-update-debounce ()
   "debounced version of `diff-hl-update'."
   ;; Ensure that the update happens once, after all major mode changes.
   ;; That will keep the the local value of <side>-margin-width, if any.
-  (if (timerp diff-hl-timer)
-      (timer-set-idle-time diff-hl-timer diff-hl-update-delay)
-    (setq diff-hl-timer
-          (run-with-idle-timer diff-hl-update-delay nil
+  (if (timerp diff-hl-update-debounce-timer)
+      (timer-set-idle-time diff-hl-update-debounce-timer diff-hl-update-debounce-delay)
+    (setq diff-hl-update-debounce-timer
+          (run-with-idle-timer diff-hl-update-debounce-delay nil
                                (lambda (buf)
                                  (with-current-buffer buf
-                                   (cancel-timer diff-hl-timer)
-                                   (setq diff-hl-timer nil)
+                                   (cancel-timer diff-hl-update-debounce-timer)
+                                   (setq diff-hl-update-debounce-timer nil)
                                    (when (buffer-live-p buf)
                                      (with-current-buffer buf
                                        (diff-hl-update)))))
                                (current-buffer)))))
+
+(defvar diff-hl-update-throttle-timer nil)
+
+(defun diff-hl-update-throttle ()
+  (unless (timerp diff-hl-update-throttle-timer)
+    (setq diff-hl-update-throttle-timer
+          (run-with-timer diff-hl-update-throttle-delay nil
+                          (lambda (buf)
+                            (cancel-timer diff-hl-update-throttle-timer)
+                            (setq diff-hl-update-throttle-timer nil)
+                            (with-current-buffer buf
+                              (diff-hl-update)))
+                          (current-buffer)))))
 
 (defun diff-hl-add-highlighting (type shape &optional ovl)
   (let ((o (or ovl (make-overlay (point) (point)))))
@@ -785,7 +802,7 @@ Return a list of line overlays used."
   "DTRT when we've `undo'-ne the buffer into unmodified state."
   (when undo-in-progress
     (unless (buffer-modified-p)
-      (let ((diff-hl-update-delay 0.01))
+      (let ((diff-hl-update-debounce-delay 0.01))
         (diff-hl-update-debounce)))))
 
 (defun diff-hl-diff-goto-hunk-1 (historic rev1)

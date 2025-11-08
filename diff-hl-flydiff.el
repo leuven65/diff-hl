@@ -64,6 +64,11 @@
   (when (diff-hl-flydiff-update-p)
     (diff-hl-update-debounce)))
 
+(defun diff-hl-flydiff-update-throttle ()
+  (when (and (not diff-hl-update-throttle-timer)
+             (diff-hl-flydiff-update-p))
+    (diff-hl-update-throttle)))
+
 (defun diff-hl-flydiff/modified-p (_state)
   (buffer-modified-p))
 
@@ -72,8 +77,9 @@
   "Perform highlighting on-the-fly.
 This is a global minor mode.  It alters how `diff-hl-mode' works."
   :lighter "" :global t
-  (and diff-hl-flydiff-timer
-       (cancel-timer diff-hl-flydiff-timer))
+  (when (timerp diff-hl-flydiff-timer)
+    (cancel-timer diff-hl-flydiff-timer)
+    (setq diff-hl-flydiff-timer nil))
 
   (if diff-hl-flydiff-mode
       (progn
@@ -84,7 +90,7 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
         (advice-add 'diff-hl-changes-buffer :around
                     #'diff-hl-flydiff-changes-buffer)
         (setq diff-hl-flydiff-timer
-              (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update)))
+              (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update-throttle)))
 
     (advice-remove 'diff-hl-overlay-modified #'ignore)
 
