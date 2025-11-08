@@ -67,7 +67,12 @@
 (defun diff-hl-flydiff-update-throttle ()
   (when (and (not diff-hl-update-throttle-timer)
              (diff-hl-flydiff-update-p))
-    (diff-hl-update-throttle)))
+    ;; async version
+    ;; Add #'funcall as callback to ensure that errors are reported.
+    (aio-listen (diff-hl-update-throttle-async) #'funcall)
+    ;; sync version
+    ;; (diff-hl-update-throttle)
+    ))
 
 (defun diff-hl-flydiff/modified-p (_state)
   (buffer-modified-p))

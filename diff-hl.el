@@ -771,6 +771,24 @@ Return a list of line overlays used."
                                 (diff-hl-update))))
                           (current-buffer)))))
 
+(defvar diff-hl-update-throttle-async-task nil)
+
+(aio-defun diff-hl-update-throttle-async ()
+  (unless diff-hl-update-throttle-async-task
+    (setq diff-hl-update-throttle-async-task t)
+    (let ((buf (current-buffer)))
+      (unwind-protect
+          (progn
+            (setq diff-hl-update-throttle-async-task (aio-sleep diff-hl-update-throttle-delay))
+            (aio-await diff-hl-update-throttle-async-task)
+            (unless (or noninteractive ; for unit test which run in bacth mode
+                        (current-idle-time))
+              (aio-await (aio-idle 0))))
+        (setq diff-hl-update-throttle-async-task nil))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (diff-hl-update))))))
+
 (defun diff-hl-add-highlighting (type shape &optional ovl)
   (let ((o (or ovl (make-overlay (point) (point)))))
     (overlay-put o 'diff-hl t)
