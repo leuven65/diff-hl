@@ -295,6 +295,10 @@ and passed the value `default-directory'.
 If any returns non-nil, `diff-hl-update' will run synchronously anyway."
   :type '(repeat :tag "Predicate" function))
 
+(defcustom diff-hl-update-delay 0.3
+  "The idle delay in seconds before highlighting is updated."
+  :type 'number)
+
 (defvar diff-hl-reference-revision-projects-cache '()
   "Alist of cached directory roots for per-project reference revisions.
 Each element in this list has the form (DIR . REV).
@@ -639,11 +643,8 @@ contents as they are (or would be) after applying the changes in NEW."
         (run-hook-with-args-until-success 'diff-hl-async-inhibit-functions
                                           default-directory))))
 
-(defvar diff-hl-timer nil)
-
 (defun diff-hl-update ()
   "Updates the diff-hl overlay."
-  (setq diff-hl-timer nil)
   (let ((promise (diff-hl--update-async)))
     (if (diff-hl--use-async-p)
         ;; async version.
@@ -729,12 +730,24 @@ Return a list of line overlays used."
       (dolist (win (get-buffer-window-list))
         (set-window-buffer win (current-buffer))))))
 
-(defun diff-hl-update-once ()
+(defvar diff-hl-timer nil)
+
+(defun diff-hl-update-debounce ()
+  "debounced version of `diff-hl-update'."
   ;; Ensure that the update happens once, after all major mode changes.
   ;; That will keep the the local value of <side>-margin-width, if any.
-  (unless diff-hl-timer
+  (if (timerp diff-hl-timer)
+      (timer-set-idle-time diff-hl-timer diff-hl-update-delay)
     (setq diff-hl-timer
-          (run-with-idle-timer 0 nil #'diff-hl-update))))
+          (run-with-idle-timer diff-hl-update-delay nil
+                               (lambda (buf)
+                                 (with-current-buffer buf
+                                   (cancel-timer diff-hl-timer)
+                                   (setq diff-hl-timer nil)
+                                   (when (buffer-live-p buf)
+                                     (with-current-buffer buf
+                                       (diff-hl-update)))))
+                               (current-buffer)))))
 
 (defun diff-hl-add-highlighting (type shape &optional ovl)
   (let ((o (or ovl (make-overlay (point) (point)))))
@@ -768,19 +781,12 @@ Return a list of line overlays used."
       (diff-hl-remove-overlays (overlay-start ov) (overlay-end ov))
       (delete-overlay ov))))
 
-(defun diff-hl-edit (_beg _end _len)
+(defun diff-hl-on-after-change (_beg _end _len)
   "DTRT when we've `undo'-ne the buffer into unmodified state."
   (when undo-in-progress
-    (when diff-hl-timer
-      (cancel-timer diff-hl-timer))
-    (setq diff-hl-timer
-          (run-with-idle-timer 0.01 nil #'diff-hl-after-undo (current-buffer)))))
-
-(defun diff-hl-after-undo (buffer)
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (unless (buffer-modified-p)
-        (diff-hl-update)))))
+    (unless (buffer-modified-p)
+      (let ((diff-hl-update-delay 0.01))
+        (diff-hl-update-debounce)))))
 
 (defun diff-hl-diff-goto-hunk-1 (historic rev1)
   (vc-buffer-sync)
@@ -1269,7 +1275,7 @@ The value of this variable is a mode line template as in
       (progn
         (diff-hl-maybe-define-bitmaps)
         (add-hook 'after-save-hook 'diff-hl-update nil t)
-        (add-hook 'after-change-functions 'diff-hl-edit nil t)
+        (add-hook 'after-change-functions 'diff-hl-on-after-change nil t)
         (add-hook (if vc-mode
                       ;; Defer until the end of this hook, so that its
                       ;; elements can modify the update behavior.
@@ -1279,10 +1285,10 @@ The value of this variable is a mode line template as in
                     ;; let's wait until the state information is
                     ;; saved, in order not to fetch it twice.
                     'find-file-hook)
-                  'diff-hl-update-once t t)
+                  'diff-hl-update-debounce t t)
         ;; Never removed because it acts globally.
         (add-hook 'vc-checkin-hook 'diff-hl-after-checkin)
-        (add-hook 'after-revert-hook 'diff-hl-update-once nil t)
+        (add-hook 'after-revert-hook 'diff-hl-update-debounce nil t)
         ;; Magit does call `auto-revert-handler', but it usually
         ;; doesn't do much, because `buffer-stale--default-function'
         ;; doesn't care about changed VC state.
@@ -1298,9 +1304,9 @@ The value of this variable is a mode line template as in
                            diff-hl-reference-revision-projects-cache))))
           (setq-local diff-hl-reference-revision rev)))
     (remove-hook 'after-save-hook 'diff-hl-update t)
-    (remove-hook 'after-change-functions 'diff-hl-edit t)
-    (remove-hook 'find-file-hook 'diff-hl-update-once t)
-    (remove-hook 'after-revert-hook 'diff-hl-update-once t)
+    (remove-hook 'after-change-functions 'diff-hl-on-after-change t)
+    (remove-hook 'find-file-hook 'diff-hl-update-debounce t)
+    (remove-hook 'after-revert-hook 'diff-hl-update-debounce t)
     (remove-hook 'magit-revert-buffer-hook 'diff-hl-update t)
     (remove-hook 'magit-not-reverted-hook 'diff-hl-update t)
     (remove-hook 'text-scale-mode-hook 'diff-hl-maybe-redefine-bitmaps t)

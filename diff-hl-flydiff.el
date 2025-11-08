@@ -48,14 +48,21 @@
         (funcall old-fun file backend new-rev diff-buf)
       (diff-hl-diff-buffer-with-reference file diff-buf backend))))
 
+(defsubst diff-hl-flydiff-update-p ()
+  (not (or
+        (not diff-hl-mode)
+        (eq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
+        (not buffer-file-name)
+        (file-remote-p default-directory)
+        (not (file-exists-p buffer-file-name)))))
+
 (defun diff-hl-flydiff-update ()
-  (unless (or
-           (not diff-hl-mode)
-           (eq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
-           (not buffer-file-name)
-           (file-remote-p default-directory)
-           (not (file-exists-p buffer-file-name)))
+  (when (diff-hl-flydiff-update-p)
     (diff-hl-update)))
+
+(defun diff-hl-flydiff-update-debounce ()
+  (when (diff-hl-flydiff-update-p)
+    (diff-hl-update-debounce)))
 
 (defun diff-hl-flydiff/modified-p (_state)
   (buffer-modified-p))
