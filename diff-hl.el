@@ -284,7 +284,8 @@ didn't work reliably in such during testing."
   :type 'boolean)
 
 (defcustom diff-hl-update-debounce-delay 0.3
-  "The idle delay in seconds before highlighting is updated."
+  "Debounce `diff-hl-update' by making it run DELAY seconds after it is
+called, If it is called again within this time, the timer is reset."
   :type 'number)
 
 (defcustom diff-hl-update-throttle-delay 0.7
@@ -711,6 +712,7 @@ Return a list of line overlays used."
          (cc (aio-await (diff-hl-changes-async))))
     (unless (or noninteractive ; for unit test which run in bacth mode
                 (current-idle-time))
+      ;; make sure the following (diff-hl--update-ui) runs when idle
       (aio-await (aio-idle 0)))
     (diff-hl--update-ui cc this-buffer)))
 
@@ -760,7 +762,6 @@ Return a list of line overlays used."
 
 (aio-defun diff-hl-update-throttle-async ()
   (unless diff-hl-update-throttle-async-task
-    (setq diff-hl-update-throttle-async-task t)
     (let ((buf (current-buffer)))
       (unwind-protect
           (progn
@@ -768,6 +769,7 @@ Return a list of line overlays used."
             (aio-await diff-hl-update-throttle-async-task)
             (unless (or noninteractive ; for unit test which run in bacth mode
                         (current-idle-time))
+              ;; make sure the following (diff-hl-update) runs when idle
               (aio-await (aio-idle 0))))
         (setq diff-hl-update-throttle-async-task nil))
       (when (buffer-live-p buf)

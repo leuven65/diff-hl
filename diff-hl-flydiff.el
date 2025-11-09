@@ -33,7 +33,7 @@
   :group 'diff-hl)
 
 (defcustom diff-hl-flydiff-delay 0.3
-  "The idle delay in seconds before highlighting is updated."
+  "The idle delay in seconds before triggering highlighting checking for each time Emacs becomes idle."
   :type 'number)
 
 (defvar diff-hl-flydiff-modified-tick nil)
