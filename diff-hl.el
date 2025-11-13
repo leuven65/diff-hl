@@ -1567,7 +1567,9 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                             diff-command
                             `(,@(if (listp switches)
                                     switches
-                                  (split-string-shell-command switches))
+                                  (static-if (>= emacs-major-version 28)
+                                      (split-string-shell-command switches)
+                                    (split-string switches nil t)))
                               ,old-alt
                               ,new-alt)))
     output-buf))
