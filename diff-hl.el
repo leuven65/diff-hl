@@ -1509,6 +1509,13 @@ the user should be returned."
                                (list "ls-files" "--format=%(objectname)" "--" file))
     (string-trim (buffer-string))))
 
+(defvar-local diff-hl--buffer-temp-files)
+
+(defun diff-hl--delete-buffer-temp-files ()
+  (seq-doseq (file diff-hl--buffer-temp-files)
+    (when (file-exists-p file)
+      (delete-file file))))
+
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
                                                (concat ";" object-name)
@@ -1522,7 +1529,10 @@ the user should be returned."
               ;; Change buffer to be inside the repo.
               (with-current-buffer (get-file-buffer file)
                 (diff-hl--run-command-sync outbuf vc-git-program
-                                           (list "cat-file" "blob" object-name)))))
+                                           (list "cat-file" "blob" object-name))
+                ;; when buffer is killed,make sure to delete this temporary file
+                (add-to-list 'diff-hl--buffer-temp-files filename)
+                (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
