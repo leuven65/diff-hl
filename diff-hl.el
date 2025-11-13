@@ -460,22 +460,28 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
          (not diff-hl-reference-revision)
          (not diff-hl-show-staged-changes)
          (eq backend 'Git))
-    (apply #'vc-git-command buffer
-           (if (diff-hl--use-async-p) 'async 1)
-           (list file)
-           "diff-files"
-           (cons "-p" (vc-switches 'git 'diff))))
+    (diff-hl--run-command "diff-hl/git-diff-files"
+                          buffer
+                          vc-git-program
+                          `("--no-pager"
+                            "diff-files"
+                            ,@(vc-switches 'git 'diff)
+                            "-p"
+                            "--"
+                            ,file)))
    ((eq new-rev 'git-index)
-    (apply #'vc-git-command buffer
-           (if (diff-hl--use-async-p) 'async 1)
-           (list file)
-           "diff-index"
-           (append
-            (vc-switches 'git 'diff)
-            (list "-p" "--cached"
-                  (or diff-hl-reference-revision
-                      (diff-hl-head-revision backend))
-                  "--"))))
+    (diff-hl--run-command "diff-hl/git-diff-index"
+                          buffer
+                          vc-git-program
+                          `("--no-pager"
+                            "diff-index"
+                            ,@(vc-switches 'git 'diff)
+                            "-p"
+                            "--cached"
+                            ,(or diff-hl-reference-revision
+                                (diff-hl-head-revision backend))
+                            "--"
+                            ,file)))
    (t
     (condition-case err
         (vc-call-backend backend 'diff (list file)
@@ -1140,6 +1146,9 @@ its end position."
     (unwind-protect
         (with-current-buffer orig-buffer
           (with-output-to-string
+            ;; (diff-hl--run-command-sync standard-output vc-git-program
+            ;;                            `("--no-pager" "apply" "--cached"
+            ;;                              "--" ,(file-local-name patchfile)))
             (vc-git-command standard-output 0
                             (file-local-name patchfile)
                             "apply" "--cached" )
@@ -1556,10 +1565,11 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
     (let ((default-directory temporary-file-directory))
       (diff-hl--run-command "Diff" output-buf
                             diff-command
-                            (append (if (listp switches)
-                                        switches
-                                      (split-string-shell-command switches))
-                                    (list old-alt new-alt))))
+                            `(,@(if (listp switches)
+                                    switches
+                                  (split-string-shell-command switches))
+                              ,old-alt
+                              ,new-alt)))
     output-buf))
 
 (defun diff-hl-resolved-revision (backend revision)
