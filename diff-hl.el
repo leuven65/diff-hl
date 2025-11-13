@@ -1475,26 +1475,28 @@ the user should be returned."
 ;; TODO: Cache based on .git/index's mtime, maybe.
 (defsubst diff-hl-git-index-object-name (file)
   (with-temp-buffer
-    (vc-git-command (current-buffer) 0 file "ls-files" "--format=%(objectname)")
-    (string-trim (buffer-string))))
+    (call-process vc-git-program nil (current-buffer) nil
+                  "ls-files" "--format=%(objectname)" "--" file)
+    (string-trim (buffer-string)))
+  )
 
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
                                                (concat ";" object-name)
                                                'manual)))
     (unless (file-exists-p filename)
-      (let ((coding-system-for-read 'no-conversion)
-            (coding-system-for-write 'no-conversion))
-        (condition-case nil
-            (with-temp-file filename
-              (let ((outbuf (current-buffer)))
-                ;; Change buffer to be inside the repo.
-                (with-current-buffer (get-file-buffer file)
-                  (vc-git-command outbuf 0 nil
-                                  "cat-file" "blob" object-name))))
-          (error
-           (when (file-exists-p filename)
-             (delete-file filename))))))
+      (condition-case nil
+          (with-temp-file filename
+            (let ((outbuf (current-buffer))
+                  (coding-system-for-read 'no-conversion)
+                  (coding-system-for-write 'no-conversion))
+              ;; Change buffer to be inside the repo.
+              (with-current-buffer (get-file-buffer file)
+                (call-process vc-git-program nil outbuf nil
+                              "cat-file" "blob" object-name))))
+        (error
+         (when (file-exists-p filename)
+           (delete-file filename)))))
     filename))
 
 (defvar diff-hl-temporary-directory (if (and (eq system-type 'gnu/linux)
