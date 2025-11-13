@@ -1536,10 +1536,11 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
          (new (if (bufferp new) new (expand-file-name new)))
          (old-alt (or (diff-file-local-copy old) old))
          (new-alt (or (diff-file-local-copy new) new))
+         (switches (or switches diff-switches))
          (command
           (mapconcat #'identity
                      `(,diff-command
-                       ,@(ensure-list (or switches diff-switches))
+                       ,@(if (listp switches) switches (list switches))
                        ,(shell-quote-argument old-alt)
                        ,(shell-quote-argument new-alt))
                      " ")))
