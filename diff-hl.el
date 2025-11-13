@@ -419,6 +419,19 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (defsubst diff-hl--use-async-p ()
   diff-hl-update-async)
 
+(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args)
+  ;; TODO: Use `start-file-process' for remote file operation.
+  (apply #'start-process process-name buffer program program-args))
+
+(defsubst diff-hl--run-command-sync (buffer program &optional program-args)
+  ;; TODO: Use `process-file' for remote file operation.
+  (apply #'call-process program nil buffer nil program-args))
+
+(defsubst diff-hl--run-command (process-name buffer program &optional program-args)
+  (if (diff-hl--use-async-p)
+      (diff-hl--run-command-async process-name buffer program program-args)
+    (diff-hl--run-command-sync buffer program program-args)))
+
 (defun diff-hl-modified-p (state)
   (or (memq state '(edited conflict))
       (and (eq state 'up-to-date)
@@ -1475,10 +1488,9 @@ the user should be returned."
 ;; TODO: Cache based on .git/index's mtime, maybe.
 (defsubst diff-hl-git-index-object-name (file)
   (with-temp-buffer
-    (call-process vc-git-program nil (current-buffer) nil
-                  "ls-files" "--format=%(objectname)" "--" file)
-    (string-trim (buffer-string)))
-  )
+    (diff-hl--run-command-sync (current-buffer) vc-git-program
+                               (list "ls-files" "--format=%(objectname)" "--" file))
+    (string-trim (buffer-string))))
 
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
@@ -1492,8 +1504,8 @@ the user should be returned."
                   (coding-system-for-write 'no-conversion))
               ;; Change buffer to be inside the repo.
               (with-current-buffer (get-file-buffer file)
-                (call-process vc-git-program nil outbuf nil
-                              "cat-file" "blob" object-name))))
+                (diff-hl--run-command-sync outbuf vc-git-program
+                                           (list "cat-file" "blob" object-name)))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
@@ -1538,23 +1550,16 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
          (new (if (bufferp new) new (expand-file-name new)))
          (old-alt (or (diff-file-local-copy old) old))
          (new-alt (or (diff-file-local-copy new) new))
-         (switches (or switches diff-switches))
-         (command
-          (mapconcat #'identity
-                     `(,diff-command
-                       ,@(if (listp switches) switches (list switches))
-                       ,(shell-quote-argument old-alt)
-                       ,(shell-quote-argument new-alt))
-                     " ")))
+         (switches (or switches diff-switches)))
     (with-current-buffer output-buf
       (erase-buffer))
     (let ((default-directory temporary-file-directory))
-      (if (and (diff-hl--use-async-p) (fboundp 'make-process))
-          (start-process "Diff" output-buf shell-file-name
-                         shell-command-switch command)
-        ;; Async processes aren't available.
-        (call-process shell-file-name nil output-buf nil
-                      shell-command-switch command)))
+      (diff-hl--run-command "Diff" output-buf
+                            diff-command
+                            (append (if (listp switches)
+                                        switches
+                                      (split-string-shell-command switches))
+                                    (list old-alt new-alt))))
     output-buf))
 
 (defun diff-hl-resolved-revision (backend revision)
