@@ -419,18 +419,26 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (defsubst diff-hl--use-async-p ()
   diff-hl-update-async)
 
-(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args)
+(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
-  (apply #'start-process process-name buffer program program-args))
+  (let ((process (apply #'start-process process-name buffer program program-args)))
+    (when callback-when-done
+      (set-process-sentinel
+       process
+       (lambda (proc event)
+         (funcall callback-when-done))))))
 
-(defsubst diff-hl--run-command-sync (buffer program &optional program-args)
+(defsubst diff-hl--run-command-sync (buffer program &optional program-args callback-when-done)
   ;; TODO: Use `process-file' for remote file operation.
-  (apply #'call-process program nil buffer nil program-args))
+  (prog1
+      (apply #'call-process program nil buffer nil program-args)
+    (when callback-when-done
+      (funcall callback-when-done))))
 
-(defsubst diff-hl--run-command (process-name buffer program &optional program-args)
+(defsubst diff-hl--run-command (process-name buffer program &optional program-args callback-when-done)
   (if (diff-hl--use-async-p)
-      (diff-hl--run-command-async process-name buffer program program-args)
-    (diff-hl--run-command-sync buffer program program-args)))
+      (diff-hl--run-command-async process-name buffer program program-args callback-when-done)
+    (diff-hl--run-command-sync buffer program program-args callback-when-done)))
 
 (defun diff-hl-modified-p (state)
   (or (memq state '(edited conflict))
@@ -1557,8 +1565,8 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
   (let* ((output-buf (get-buffer-create (or output-buf " *diff-hl-Diff*")))
          (old (if (bufferp old) old (expand-file-name old)))
          (new (if (bufferp new) new (expand-file-name new)))
-         (old-alt (or (diff-file-local-copy old) old))
-         (new-alt (or (diff-file-local-copy new) new))
+         (old-alt (diff-file-local-copy old))
+         (new-alt (diff-file-local-copy new))
          (switches (or switches diff-switches)))
     (with-current-buffer output-buf
       (erase-buffer))
@@ -1570,8 +1578,12 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                                   (static-if (>= emacs-major-version 28)
                                       (split-string-shell-command switches)
                                     (split-string switches nil t)))
-                              ,old-alt
-                              ,new-alt)))
+                              ,(or old-alt old)
+                              ,(or new-alt new))
+                            (lambda ()
+                              ;; delete temp files
+                              (when old-alt (delete-file old-alt))
+                              (when new-alt (delete-file new-alt)))))
     output-buf))
 
 (defun diff-hl-resolved-revision (backend revision)
