@@ -220,7 +220,10 @@
 +last line
 \\ No newline at end of file
 
-Diff finished."
+Process Diff exited abnormally with code 1"
+                 ;; according to the diff man page, an exit code of 0 means "no
+                 ;; differences were found", 1 means "differences were found", ,
+                 ;; 2 means "an error occurred".
                  (buffer-substring (point) (point-max))))))))
 
 ;; (diff-hl-deftest diff-hl-resolved-revision-with-hg ()

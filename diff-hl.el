@@ -76,6 +76,7 @@
   (declare-function vc-bzr-command "vc-bzr")
   (declare-function magit-toplevel "magit-git")
   (declare-function magit-git-items "magit-git")
+  (declare-function diff-file-local-copy "diff")
   (declare-function vc-jj--process-lines "vc-jj")
   (declare-function vc-annotate-extract-revision-at-line "vc-annotate")
   (declare-function diff-hl-amend-mode "diff-hl-amend")
@@ -1546,7 +1547,7 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
       (erase-buffer))
     (let ((default-directory temporary-file-directory))
       (if (and (diff-hl--use-async-p) (fboundp 'make-process))
-          (start-process "diff-hl-Diff" output-buf shell-file-name
+          (start-process "Diff" output-buf shell-file-name
                          shell-command-switch command)
         ;; Async processes aren't available.
         (call-process shell-file-name nil output-buf nil
