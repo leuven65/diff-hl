@@ -425,8 +425,11 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
     (when callback-when-done
       (set-process-sentinel
        process
-       (lambda (proc event)
-         (funcall callback-when-done))))))
+       (let ((old-sentinel (process-sentinel process)))
+         (lambda (proc event)
+           (when old-sentinel
+             (funcall old-sentinel proc event))
+           (funcall callback-when-done)))))))
 
 (defsubst diff-hl--run-command-sync (buffer program &optional program-args callback-when-done)
   ;; TODO: Use `process-file' for remote file operation.
