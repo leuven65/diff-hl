@@ -76,7 +76,6 @@
   (declare-function vc-bzr-command "vc-bzr")
   (declare-function magit-toplevel "magit-git")
   (declare-function magit-git-items "magit-git")
-  (declare-function diff-no-select "diff")
   (declare-function vc-jj--process-lines "vc-jj")
   (declare-function vc-annotate-extract-revision-at-line "vc-annotate")
   (declare-function diff-hl-amend-mode "diff-hl-amend")
@@ -92,7 +91,7 @@
                (debug (sexp sexp &rest sexp)))
       (if (eval condition lexical-binding)
           then-form
-        (cons 'progn else-forms))))  
+        (cons 'progn else-forms))))
   )
 
 (defgroup diff-hl nil
@@ -1527,11 +1526,32 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                         (assoc-default backend diff-hl-head-revision-alist)))
                    (diff-hl-working-revision buffer-file-name backend)))))
            (switches (format "-U %d --strip-trailing-cr" (or context-lines 0))))
-      (diff-no-select rev (current-buffer) switches (not (diff-hl--use-async-p))
-                      (get-buffer-create dest-buffer))
-      ;; Function `diff-sentinel' adds a summary line, but that seems fine.
-      ;; In all commands which use exact text we call it synchronously.
-      (get-buffer dest-buffer))))
+      (diff-hl--diff-no-select rev (current-buffer) switches dest-buffer))))
+
+(defun diff-hl--diff-no-select (old new &optional switches output-buf)
+  "Compare the OLD and NEW file/buffer."
+  (let* ((output-buf (get-buffer-create (or output-buf " *diff-hl-Diff*")))
+         (old (if (bufferp old) old (expand-file-name old)))
+         (new (if (bufferp new) new (expand-file-name new)))
+         (old-alt (or (diff-file-local-copy old) old))
+         (new-alt (or (diff-file-local-copy new) new))
+         (command
+          (mapconcat #'identity
+                     `(,diff-command
+                       ,@(ensure-list (or switches diff-switches))
+                       ,(shell-quote-argument old-alt)
+                       ,(shell-quote-argument new-alt))
+                     " ")))
+    (with-current-buffer output-buf
+      (erase-buffer))
+    (let ((default-directory temporary-file-directory))
+      (if (and (diff-hl--use-async-p) (fboundp 'make-process))
+          (start-process "diff-hl-Diff" output-buf shell-file-name
+                         shell-command-switch command)
+        ;; Async processes aren't available.
+        (call-process shell-file-name nil output-buf nil
+                      shell-command-switch command)))
+    output-buf))
 
 (defun diff-hl-resolved-revision (backend revision)
   (cond
