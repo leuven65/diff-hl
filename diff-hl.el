@@ -419,17 +419,24 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 (defsubst diff-hl--use-async-p ()
   diff-hl-update-async)
 
+(defsubst diff-hl--set-process-sentinel (process callback-when-done)
+  (set-process-sentinel
+   process
+   (let ((old-sentinel (process-sentinel process)))
+     (lambda (proc event)
+       (cond            
+        ((eq (process-status proc) 'exit)
+         (when old-sentinel
+           (funcall old-sentinel proc event))
+         (funcall callback-when-done))
+        ((not (eq (process-status proc) 'run))             
+         (error "Unexpected process state")))))))
+
 (defsubst diff-hl--run-command-async (process-name buffer program &optional program-args callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
   (let ((process (apply #'start-process process-name buffer program program-args)))
     (when callback-when-done
-      (set-process-sentinel
-       process
-       (let ((old-sentinel (process-sentinel process)))
-         (lambda (proc event)
-           (when old-sentinel
-             (funcall old-sentinel proc event))
-           (funcall callback-when-done)))))))
+      (diff-hl--set-process-sentinel process callback-when-done))))
 
 (defsubst diff-hl--run-command-sync (buffer program &optional program-args callback-when-done)
   ;; TODO: Use `process-file' for remote file operation.
@@ -514,19 +521,28 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
   "Buffers created by `diff-hl-changes-buffer' and not yet killed.")
 
 (defsubst diff-hl--process-buffer-promise (buf)
-  (let ((aio-cb (aio-make-callback :once t)))
-    (with-current-buffer buf
-      (vc-exec-after (car aio-cb)))
+  (let ((promise (aio-promise))
+        (proc (get-buffer-process buf)))
+    (cond
+     ;; If there's no background process, just execute the code.
+     ((or (null proc) (eq (process-status proc) 'exit))
+      (when proc (accept-process-output proc 0))
+      (aio-resolve promise (lambda () buf)))
+     ((eq (process-status proc) 'run)
+      (diff-hl--set-process-sentinel proc
+                                     (lambda ()
+                                       (aio-resolve promise
+                                                    (lambda () buf)))))
+     (t (error "Unexpected process state")))
     ;; return promise
-    (cdr aio-cb)))
+    promise))
 
 (aio-defun diff-hl-changes-from-buffer-and-kill-async (buf)
   (when (buffer-live-p buf)
     ;; add buffer to the list
     (push buf diff-hl--diff-buffer-list)
     (unwind-protect
-        (progn (aio-await (diff-hl--process-buffer-promise buf))
-               (diff-hl-changes-from-buffer buf))
+        (diff-hl-changes-from-buffer (aio-await (diff-hl--process-buffer-promise buf)))
       ;; kill the buffer in any case
       (kill-buffer buf)
       ;; and remove it from the list
@@ -1512,7 +1528,8 @@ the user should be returned."
                                (list "ls-files" "--format=%(objectname)" "--" file))
     (string-trim (buffer-string))))
 
-(defvar-local diff-hl--buffer-temp-files)
+(defvar-local diff-hl--buffer-temp-files nil
+  "List of temporary files created for the current buffer.")
 
 (defun diff-hl--delete-buffer-temp-files ()
   (seq-doseq (file diff-hl--buffer-temp-files)
