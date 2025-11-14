@@ -433,7 +433,7 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
           ((eq stat 'exit) (funcall callback-when-done))
           ((not (eq stat 'run)) (error "Unexpected process state"))))))))
 
-(defsubst diff-hl--run-command-async-raw (process-name buffer program &optional program-args callback-when-done)
+(defsubst diff-hl--start-process (process-name buffer program &optional program-args callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
   (make-process :name process-name
                 :buffer buffer
@@ -446,34 +446,34 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                                  ((eq stat 'exit) (funcall callback-when-done))
                                  ((not (eq stat 'run)) (error "Unexpected process state"))))))))
 
-(defsubst diff-hl--run-command-sync (buffer program &optional program-args)
+(defsubst diff-hl--call-process (buffer program &optional program-args)
   ;; TODO: Use `process-file' for remote file operation.
   (apply #'call-process program nil buffer nil program-args))
 
 (defsubst diff-hl--run-command-raw (process-name buffer program &optional program-args callback-when-done)
   (if (diff-hl--use-async-p)
-      (diff-hl--run-command-async-raw process-name buffer program program-args callback-when-done)
+      (diff-hl--start-process process-name buffer program program-args callback-when-done)
     (prog1
-        (diff-hl--run-command-sync buffer program program-args)
+        (diff-hl--call-process buffer program program-args)
       (when callback-when-done
         (funcall callback-when-done)))))
 
-(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args)
+(defsubst diff-hl--start-process-async (process-name buffer program &optional program-args)
   (let ((promise (aio-promise)))
-    (diff-hl--run-command-async-raw process-name
-                                    buffer
-                                    program
-                                    program-args
-                                    (lambda ()
-                                      (aio-resolve promise
-                                                   (lambda () buffer))))
+    (diff-hl--start-process process-name
+                            buffer
+                            program
+                            program-args
+                            (lambda ()
+                              (aio-resolve promise
+                                           (lambda () buffer))))
     ;; return promise
     promise))
 
 (defsubst diff-hl--run-command (process-name buffer program &optional program-args)
   (if (diff-hl--use-async-p)
-      (diff-hl--run-command-async process-name buffer program program-args)
-    (diff-hl--run-command-sync buffer program program-args)))
+      (diff-hl--start-process-async process-name buffer program program-args)
+    (diff-hl--call-process buffer program program-args)))
 
 (defun diff-hl-modified-p (state)
   (or (memq state '(edited conflict))
@@ -1198,7 +1198,7 @@ its end position."
     (unwind-protect
         (with-current-buffer orig-buffer
           (with-output-to-string
-            ;; (diff-hl--run-command-sync standard-output vc-git-program
+            ;; (diff-hl--call-process standard-output vc-git-program
             ;;                            `("--no-pager" "apply" "--cached"
             ;;                              "--" ,(file-local-name patchfile)))
             (vc-git-command standard-output 0
@@ -1503,6 +1503,23 @@ The value of this variable is a mode line template as in
       (add-hook 'vc-checkin-hook 'diff-hl-dir-update t t)
     (remove-hook 'vc-checkin-hook 'diff-hl-dir-update t)))
 
+
+(defsubst diff-hl--create-temporary-directory ()
+  "Create temporary directory and delete it when emacs exits."
+  (let* ((temporary-file-directory (if (and (eq system-type 'gnu/linux)
+                                            (file-directory-p "/dev/shm/"))
+                                       "/dev/shm/"
+                                     temporary-file-directory))
+         (temp-dir (file-name-as-directory (make-temp-file "diff-hl-" t))))
+    ;; delete temp dir on exit
+    (add-hook 'kill-emacs-hook (lambda ()
+                                 (when (file-directory-p temp-dir)
+                                   (delete-directory temp-dir t))))
+    temp-dir))
+
+(defvar diff-hl-temporary-directory (diff-hl--create-temporary-directory)
+  "Directory where `diff-hl' creates temporary files.")
+
 (defun diff-hl-make-temp-file-name (file rev &optional manual)
   "Return a backup file name for REV or the current version of FILE.
 If MANUAL is non-nil it means that a name for backups created by
@@ -1549,7 +1566,7 @@ the user should be returned."
 ;; TODO: Cache based on .git/index's mtime, maybe.
 (defsubst diff-hl-git-index-object-name (file)
   (with-temp-buffer
-    (diff-hl--run-command-sync (current-buffer) vc-git-program
+    (diff-hl--call-process (current-buffer) vc-git-program
                                (list "ls-files" "--format=%(objectname)" "--" file))
     (string-trim (buffer-string))))
 
@@ -1565,28 +1582,12 @@ the user should be returned."
               (let ((outbuf (current-buffer)))
                 ;; Change buffer to be inside the repo.
                 (with-current-buffer (get-file-buffer file)
-                  (diff-hl--run-command-sync outbuf vc-git-program
-                                             (list "cat-file" "blob" object-name))))))
+                  (diff-hl--call-process outbuf vc-git-program
+                                         (list "cat-file" "blob" object-name))))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
     filename))
-
-(defsubst diff-hl--create-temporary-directory ()
-  "Create temporary directory and delete it when emacs exits."
-  (let* ((temporary-file-directory (if (and (eq system-type 'gnu/linux)
-                                            (file-directory-p "/dev/shm/"))
-                                       "/dev/shm/"
-                                     temporary-file-directory))
-         (temp-dir (file-name-as-directory (make-temp-file "diff-hl-" t))))
-    ;; delete temp dir on exit
-    (add-hook 'kill-emacs-hook (lambda ()
-                                 (when (file-directory-p temp-dir)
-                                   (delete-directory temp-dir t))))
-    temp-dir))
-
-(defvar diff-hl-temporary-directory (diff-hl--create-temporary-directory)
-  "Directory where `diff-hl' creates temporary files.")
 
 (defun diff-hl-diff-buffer-with-reference (file &optional dest-buffer backend context-lines)
   "Compute the diff between the current buffer contents and reference in BACKEND.
