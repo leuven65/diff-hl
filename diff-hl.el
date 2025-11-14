@@ -1528,13 +1528,15 @@ the user should be returned."
                                (list "ls-files" "--format=%(objectname)" "--" file))
     (string-trim (buffer-string))))
 
-(defvar-local diff-hl--buffer-temp-files nil
+(defvar diff-hl--buffer-temp-files (make-hash-table :test 'equal)
   "List of temporary files created for the current buffer.")
 
 (defun diff-hl--delete-buffer-temp-files ()
-  (seq-doseq (file diff-hl--buffer-temp-files)
+  "Delete all temporary files created for the current buffer."
+  (seq-doseq (file (gethash buffer-file-name diff-hl--buffer-temp-files))
     (when (file-exists-p file)
-      (delete-file file))))
+      (delete-file file)))
+  (remhash buffer-file-name diff-hl--buffer-temp-files))
 
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
@@ -1551,8 +1553,10 @@ the user should be returned."
                 (diff-hl--run-command-sync outbuf vc-git-program
                                            (list "cat-file" "blob" object-name))
                 ;; when buffer is killed,make sure to delete this temporary file
-                (add-to-list 'diff-hl--buffer-temp-files filename)
-                (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t))))
+                ;; add it to `diff-hl--buffer-temp-files'
+                (push filename (gethash buffer-file-name diff-hl--buffer-temp-files))
+                (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t)
+                )))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
