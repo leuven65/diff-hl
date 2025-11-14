@@ -1501,18 +1501,18 @@ the user should be returned."
       (if (file-exists-p automatic-backup)
           (rename-file automatic-backup filename nil)
         (with-current-buffer filebuf
-          (let ((coding-system-for-read 'no-conversion)
-                (coding-system-for-write 'no-conversion))
-            (condition-case nil
+          (condition-case nil
+              (let ((coding-system-for-read 'no-conversion)
+                    (coding-system-for-write 'no-conversion))
                 (with-temp-file filename
                   (let ((outbuf (current-buffer)))
                     ;; Change buffer to get local value of
                     ;; vc-checkout-switches.
                     (with-current-buffer filebuf
-                      (vc-call find-revision file revision outbuf))))
-              (error
-               (when (file-exists-p filename)
-                 (delete-file filename))))))))
+                      (vc-call find-revision file revision outbuf)))))
+            (error
+             (when (file-exists-p filename)
+               (delete-file filename)))))))
     filename))
 
 (defsubst diff-hl-working-revision (file &optional backend)
@@ -1544,19 +1544,19 @@ the user should be returned."
                                                'manual)))
     (unless (file-exists-p filename)
       (condition-case nil
-          (with-temp-file filename
-            (let ((outbuf (current-buffer))
-                  (coding-system-for-read 'no-conversion)
-                  (coding-system-for-write 'no-conversion))
-              ;; Change buffer to be inside the repo.
-              (with-current-buffer (get-file-buffer file)
-                (diff-hl--run-command-sync outbuf vc-git-program
-                                           (list "cat-file" "blob" object-name))
-                ;; when buffer is killed,make sure to delete this temporary file
-                ;; add it to `diff-hl--buffer-temp-files'
-                (push filename (gethash buffer-file-name diff-hl--buffer-temp-files))
-                (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t)
-                )))
+          (let ((coding-system-for-read 'no-conversion)
+                (coding-system-for-write 'no-conversion))
+            (with-temp-file filename
+              (let ((outbuf (current-buffer)))
+                ;; Change buffer to be inside the repo.
+                (with-current-buffer (get-file-buffer file)
+                  (diff-hl--run-command-sync outbuf vc-git-program
+                                             (list "cat-file" "blob" object-name))
+                  ;; when buffer is killed,make sure to delete this temporary file
+                  ;; add it to `diff-hl--buffer-temp-files'
+                  (push filename (gethash buffer-file-name diff-hl--buffer-temp-files))
+                  (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t)
+                  ))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
