@@ -1483,14 +1483,14 @@ The value of this variable is a mode line template as in
 If MANUAL is non-nil it means that a name for backups created by
 the user should be returned."
   (let* ((auto-save-file-name-transforms
-          `((".*" ,temporary-file-directory t)))
+          `((".*" ,diff-hl-temporary-directory t)))
          (buffer-file-name file))
     (expand-file-name
      (concat (make-auto-save-file-name)
              ".~" (subst-char-in-string
                    ?/ ?_ rev)
              (unless manual ".") "~")
-     temporary-file-directory)))
+     diff-hl-temporary-directory)))
 
 (defun diff-hl-create-revision (file revision)
   "Read REVISION of FILE into a buffer and return the buffer."
@@ -1528,16 +1528,6 @@ the user should be returned."
                                (list "ls-files" "--format=%(objectname)" "--" file))
     (string-trim (buffer-string))))
 
-(defvar diff-hl--buffer-temp-files (make-hash-table :test 'equal)
-  "List of temporary files created for the current buffer.")
-
-(defun diff-hl--delete-buffer-temp-files ()
-  "Delete all temporary files created for the current buffer."
-  (seq-doseq (file (gethash buffer-file-name diff-hl--buffer-temp-files))
-    (when (file-exists-p file)
-      (delete-file file)))
-  (remhash buffer-file-name diff-hl--buffer-temp-files))
-
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
                                                (concat ";" object-name)
@@ -1551,21 +1541,27 @@ the user should be returned."
                 ;; Change buffer to be inside the repo.
                 (with-current-buffer (get-file-buffer file)
                   (diff-hl--run-command-sync outbuf vc-git-program
-                                             (list "cat-file" "blob" object-name))
-                  ;; when buffer is killed,make sure to delete this temporary file
-                  ;; add it to `diff-hl--buffer-temp-files'
-                  (push filename (gethash buffer-file-name diff-hl--buffer-temp-files))
-                  (add-hook 'kill-buffer-hook #'diff-hl--delete-buffer-temp-files nil t)
-                  ))))
+                                             (list "cat-file" "blob" object-name))))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
     filename))
 
-(defvar diff-hl-temporary-directory (if (and (eq system-type 'gnu/linux)
-                                             (file-directory-p "/dev/shm/"))
-                                        "/dev/shm/"
-                                      temporary-file-directory))
+(defsubst diff-hl--create-temporary-directory ()
+  "Create temporary directory and delete it when emacs exits."
+  (let* ((temporary-file-directory (if (and (eq system-type 'gnu/linux)
+                                            (file-directory-p "/dev/shm/"))
+                                       "/dev/shm/"
+                                     temporary-file-directory))
+         (temp-dir (file-name-as-directory (make-temp-file "diff-hl-" t))))
+    ;; delete temp dir on exit
+    (add-hook 'kill-emacs-hook (lambda ()
+                                 (when (file-directory-p temp-dir)
+                                   (delete-directory temp-dir t))))
+    temp-dir))
+
+(defvar diff-hl-temporary-directory (diff-hl--create-temporary-directory)
+  "Directory where `diff-hl' creates temporary files.")
 
 (defun diff-hl-diff-buffer-with-reference (file &optional dest-buffer backend context-lines)
   "Compute the diff between the current buffer contents and reference in BACKEND.
@@ -1604,7 +1600,7 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
          (switches (or switches diff-switches)))
     (with-current-buffer output-buf
       (erase-buffer))
-    (let ((default-directory temporary-file-directory))
+    (let ((default-directory diff-hl-temporary-directory))
       (diff-hl--run-command "Diff" output-buf
                             diff-command
                             `(,@(if (listp switches)
