@@ -783,7 +783,7 @@ Return a list of line overlays used."
          (cc (aio-await (diff-hl-changes-async))))
     (unless (or noninteractive ; for unit test which run in bacth mode
                 (current-idle-time)
-                (diff-hl--use-async-p))
+                (not (diff-hl--use-async-p)))
       ;; make sure the following (diff-hl--update-ui) runs when idle
       (aio-await (aio-idle 0)))
     (diff-hl--update-ui cc this-buffer)))
@@ -841,7 +841,7 @@ Return a list of line overlays used."
             (aio-await diff-hl-update-throttle-async-task)
             (unless (or noninteractive ; for unit test which run in bacth mode
                         (current-idle-time)
-                        (diff-hl--use-async-p))
+                        (not (diff-hl--use-async-p)))
               ;; make sure the following (diff-hl-update) runs when idle
               (aio-await (aio-idle 0))))
         (setq diff-hl-update-throttle-async-task nil))
