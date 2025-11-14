@@ -423,32 +423,57 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
   (set-process-sentinel
    process
    (let ((old-sentinel (process-sentinel process)))
-     (lambda (proc event)
-       (cond            
-        ((eq (process-status proc) 'exit)
-         (when old-sentinel
-           (funcall old-sentinel proc event))
-         (funcall callback-when-done))
-        ((not (eq (process-status proc) 'run))             
-         (error "Unexpected process state")))))))
+     (lambda (proc msg)
+       ;; call old sentinel
+       (when old-sentinel
+         (funcall old-sentinel proc msg))
+       ;; call my sentinel
+       (let ((stat (process-status proc)))
+         (cond
+          ((eq stat 'exit) (funcall callback-when-done))
+          ((not (eq stat 'run)) (error "Unexpected process state"))))))))
 
-(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args callback-when-done)
+(defsubst diff-hl--run-command-async-raw (process-name buffer program &optional program-args callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
-  (let ((process (apply #'start-process process-name buffer program program-args)))
-    (when callback-when-done
-      (diff-hl--set-process-sentinel process callback-when-done))))
+  (make-process :name process-name
+                :buffer buffer
+                :command (cons program program-args)
+                :sentinel (when callback-when-done
+                            (lambda (proc msg)
+                              (internal-default-process-sentinel proc msg)
+                              (let ((stat (process-status proc)))
+                                (cond
+                                 ((eq stat 'exit) (funcall callback-when-done))
+                                 ((not (eq stat 'run)) (error "Unexpected process state"))))))))
 
-(defsubst diff-hl--run-command-sync (buffer program &optional program-args callback-when-done)
+(defsubst diff-hl--run-command-sync (buffer program &optional program-args)
   ;; TODO: Use `process-file' for remote file operation.
-  (prog1
-      (apply #'call-process program nil buffer nil program-args)
-    (when callback-when-done
-      (funcall callback-when-done))))
+  (apply #'call-process program nil buffer nil program-args))
 
-(defsubst diff-hl--run-command (process-name buffer program &optional program-args callback-when-done)
+(defsubst diff-hl--run-command-raw (process-name buffer program &optional program-args callback-when-done)
   (if (diff-hl--use-async-p)
-      (diff-hl--run-command-async process-name buffer program program-args callback-when-done)
-    (diff-hl--run-command-sync buffer program program-args callback-when-done)))
+      (diff-hl--run-command-async-raw process-name buffer program program-args callback-when-done)
+    (prog1
+        (diff-hl--run-command-sync buffer program program-args)
+      (when callback-when-done
+        (funcall callback-when-done)))))
+
+(defsubst diff-hl--run-command-async (process-name buffer program &optional program-args)
+  (let ((promise (aio-promise)))
+    (diff-hl--run-command-async-raw process-name
+                                    buffer
+                                    program
+                                    program-args
+                                    (lambda ()
+                                      (aio-resolve promise
+                                                   (lambda () buffer))))
+    ;; return promise
+    promise))
+
+(defsubst diff-hl--run-command (process-name buffer program &optional program-args)
+  (if (diff-hl--use-async-p)
+      (diff-hl--run-command-async process-name buffer program program-args)
+    (diff-hl--run-command-sync buffer program program-args)))
 
 (defun diff-hl-modified-p (state)
   (or (memq state '(edited conflict))
@@ -478,28 +503,28 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
          (not diff-hl-reference-revision)
          (not diff-hl-show-staged-changes)
          (eq backend 'Git))
-    (diff-hl--run-command "diff-hl/git-diff-files"
-                          buffer
-                          vc-git-program
-                          `("--no-pager"
-                            "diff-files"
-                            ,@(vc-switches 'git 'diff)
-                            "-p"
-                            "--"
-                            ,file)))
+    (diff-hl--run-command-raw "diff-hl/git-diff-files"
+                              buffer
+                              vc-git-program
+                              `("--no-pager"
+                                "diff-files"
+                                ,@(vc-switches 'git 'diff)
+                                "-p"
+                                "--"
+                                ,file)))
    ((eq new-rev 'git-index)
-    (diff-hl--run-command "diff-hl/git-diff-index"
-                          buffer
-                          vc-git-program
-                          `("--no-pager"
-                            "diff-index"
-                            ,@(vc-switches 'git 'diff)
-                            "-p"
-                            "--cached"
-                            ,(or diff-hl-reference-revision
-                                (diff-hl-head-revision backend))
-                            "--"
-                            ,file)))
+    (diff-hl--run-command-raw "diff-hl/git-diff-index"
+                              buffer
+                              vc-git-program
+                              `("--no-pager"
+                                "diff-index"
+                                ,@(vc-switches 'git 'diff)
+                                "-p"
+                                "--cached"
+                                ,(or diff-hl-reference-revision
+                                     (diff-hl-head-revision backend))
+                                "--"
+                                ,file)))
    (t
     (condition-case err
         (vc-call-backend backend 'diff (list file)
@@ -1601,19 +1626,19 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
     (with-current-buffer output-buf
       (erase-buffer))
     (let ((default-directory diff-hl-temporary-directory))
-      (diff-hl--run-command "Diff" output-buf
-                            diff-command
-                            `(,@(if (listp switches)
-                                    switches
-                                  (static-if (>= emacs-major-version 28)
-                                      (split-string-shell-command switches)
-                                    (split-string switches nil t)))
-                              ,(or old-alt old)
-                              ,(or new-alt new))
-                            (lambda ()
-                              ;; delete temp files
-                              (when old-alt (delete-file old-alt))
-                              (when new-alt (delete-file new-alt)))))
+      (diff-hl--run-command-raw "Diff" output-buf
+                                diff-command
+                                `(,@(if (listp switches)
+                                        switches
+                                      (static-if (>= emacs-major-version 28)
+                                          (split-string-shell-command switches)
+                                        (split-string switches nil t)))
+                                  ,(or old-alt old)
+                                  ,(or new-alt new))
+                                (lambda ()
+                                  ;; delete temp files
+                                  (when old-alt (delete-file old-alt))
+                                  (when new-alt (delete-file new-alt)))))
     output-buf))
 
 (defun diff-hl-resolved-revision (backend revision)
