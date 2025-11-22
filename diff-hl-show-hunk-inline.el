@@ -24,38 +24,45 @@
 ;; can be scrolled.
 ;;; Code:
 
-(require 'subr-x)
+(require 'diff-hl-show-hunk)
 
-(defvar diff-hl-show-hunk-inline--current-popup nil "The overlay of the current inline popup.")
-(defvar diff-hl-show-hunk-inline--current-lines nil "A list of the lines to show in the popup.")
-(defvar diff-hl-show-hunk-inline--current-index nil "First line showed in popup.")
-(defvar diff-hl-show-hunk-inline--invoking-command nil "Command that invoked the popup.")
-(defvar diff-hl-show-hunk-inline--current-footer nil "String to be displayed in the footer.")
-(defvar diff-hl-show-hunk-inline--current-header nil "String to be displayed in the header.")
-(defvar diff-hl-show-hunk-inline--height nil "Height of the popup.")
-(defvar diff-hl-show-hunk-inline--current-custom-keymap nil "Keymap to be added to the keymap of the inline popup.")
-(defvar diff-hl-show-hunk-inline--close-hook nil "Function to be called when the popup closes.")
+(defgroup diff-hl-show-hunk-inline nil
+  "Shows inline popups using phantom overlays."
+  :group 'diff-hl)
 
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-popup)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-lines)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-index)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-header)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-footer)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--invoking-command)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--current-custom-keymap)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--height)
-(make-variable-buffer-local 'diff-hl-show-hunk-inline--close-hook)
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-popup 'diff-hl-show-hunk-inline--current-popup "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-lines 'diff-hl-show-hunk-inline--current-lines "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-index 'diff-hl-show-hunk-inline--current-index "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--invoking-command 'diff-hl-show-hunk-inline--invoking-command "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-footer 'diff-hl-show-hunk-inline--current-footer "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-header 'diff-hl-show-hunk-inline--current-header "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--height 'diff-hl-show-hunk-inline--height "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--current-custom-keymap 'diff-hl-show-hunk-inline--current-custom-keymap "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup--close-hook 'diff-hl-show-hunk-inline--close-hook "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-show-hunk-inline-popup-hide-hunk 'diff-hl-show-hunk-inline-hide-hunk "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-show-hunk-inline-popup-smart-lines 'diff-hl-show-hunk-inline-smart-lines "0.11.0")
+(define-obsolete-variable-alias 'diff-hl-inline-popup-transient-mode-map 'diff-hl-show-hunk-inline-transient-mode-map "0.11.0")
 
 (defcustom diff-hl-show-hunk-inline-hide-hunk nil
   "If t, inline-popup is shown over the hunk, hiding it."
   :type 'boolean)
 
 (defcustom diff-hl-show-hunk-inline-smart-lines t
-  "If t, inline-popup tries to show only the deleted lines of the
-hunk.  The added lines are shown when scrolling the popup.  If
-the hunk consist only on added lines, then
-`diff-hl-show-hunk--no-lines-removed-message' it is shown."
+  "If t, inline-popup tries to show only the deleted lines of the hunk.
+The added lines are shown when scrolling the popup.  If the hunk consist
+only on added lines, then `diff-hl-show-hunk--no-lines-removed-message' it
+is shown."
   :type 'boolean)
+
+(defvar-local diff-hl-show-hunk-inline--current-popup nil "The overlay of the current inline popup.")
+(defvar-local diff-hl-show-hunk-inline--current-lines nil "A list of the lines to show in the popup.")
+(defvar-local diff-hl-show-hunk-inline--current-index nil "First line showed in popup.")
+(defvar-local diff-hl-show-hunk-inline--invoking-command nil "Command that invoked the popup.")
+(defvar-local diff-hl-show-hunk-inline--current-footer nil "String to be displayed in the footer.")
+(defvar-local diff-hl-show-hunk-inline--current-header nil "String to be displayed in the header.")
+(defvar-local diff-hl-show-hunk-inline--height nil "Height of the popup.")
+(defvar-local diff-hl-show-hunk-inline--current-custom-keymap nil "Keymap to be added to the keymap of the inline popup.")
+(defvar-local diff-hl-show-hunk-inline--close-hook nil "Function to be called when the popup closes.")
 
 (defun diff-hl-show-hunk-inline--splice (list offset length)
   "Compute a sublist of LIST starting at OFFSET, of LENGTH."
@@ -229,7 +236,7 @@ to scroll in the popup")
       (diff-hl-show-hunk-inline-hide))))
 
 (define-minor-mode diff-hl-show-hunk-inline-transient-mode
-  "Temporal minor mode to control an inline popup"
+  "Temporal minor mode to control an inline popup."
   :global nil
   (remove-hook 'post-command-hook #'diff-hl-show-hunk-inline--post-command-hook t)
   (set-keymap-parent diff-hl-show-hunk-inline-transient-mode-map nil)
@@ -254,10 +261,9 @@ to scroll in the popup")
 
 ;;;###autoload
 (defun diff-hl-show-hunk-inline-show (lines &optional header footer keymap close-hook point height)
-  "Create a phantom overlay to show the inline popup, with some
-content LINES, and a HEADER and a FOOTER, at POINT.  KEYMAP is
-added to the current keymaps.  CLOSE-HOOK is called when the popup
-is closed."
+  "Create a phantom overlay to show the inline popup, with some content LINES,
+and a HEADER and a FOOTER, at POINT. KEYMAP is added to the current
+keymaps.  CLOSE-HOOK is called when the popup is closed."
   (when diff-hl-show-hunk-inline--current-popup
     (delete-overlay diff-hl-show-hunk-inline--current-popup)
     (setq diff-hl-show-hunk-inline--current-popup nil))
@@ -359,19 +365,6 @@ BUFFER is a buffer with the hunk."
          height))
       )))
 
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-popup 'diff-hl-show-hunk-inline--current-popup "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-lines 'diff-hl-show-hunk-inline--current-lines "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-index 'diff-hl-show-hunk-inline--current-index "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--invoking-command 'diff-hl-show-hunk-inline--invoking-command "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-footer 'diff-hl-show-hunk-inline--current-footer "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-header 'diff-hl-show-hunk-inline--current-header "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--height 'diff-hl-show-hunk-inline--height "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--current-custom-keymap 'diff-hl-show-hunk-inline--current-custom-keymap "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup--close-hook 'diff-hl-show-hunk-inline--close-hook "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-show-hunk-inline-popup-hide-hunk 'diff-hl-show-hunk-inline-hide-hunk "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-show-hunk-inline-popup-smart-lines 'diff-hl-show-hunk-inline-smart-lines "0.11.0")
-(define-obsolete-variable-alias 'diff-hl-inline-popup-transient-mode-map 'diff-hl-show-hunk-inline-transient-mode-map "0.11.0")
-
 (define-obsolete-function-alias 'diff-hl-inline-popup--splice 'diff-hl-show-hunk-inline--splice "0.11.0")
 (define-obsolete-function-alias 'diff-hl-inline-popup--ensure-enough-lines 'diff-hl-show-hunk-inline--ensure-enough-lines "0.11.0")
 (define-obsolete-function-alias 'diff-hl-inline-popup--compute-content-height 'diff-hl-show-hunk-inline--compute-content-height "0.11.0")
@@ -398,4 +391,4 @@ BUFFER is a buffer with the hunk."
 (provide 'diff-hl-inline-popup)
 
 (provide 'diff-hl-show-hunk-inline)
-;;; diff-hl-show-hunk-inline ends here
+;;; diff-hl-show-hunk-inline.el ends here
