@@ -37,8 +37,7 @@
 time Emacs becomes idle."
   :type 'number)
 
-(defvar diff-hl-flydiff-modified-tick nil)
-(make-variable-buffer-local 'diff-hl-flydiff-modified-tick)
+(defvar-local diff-hl-flydiff-modified-tick nil)
 
 (defvar diff-hl-flydiff-timer nil)
 
