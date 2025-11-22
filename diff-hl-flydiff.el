@@ -42,12 +42,11 @@ time Emacs becomes idle."
 
 (defvar diff-hl-flydiff-timer nil)
 
-(defun diff-hl-flydiff-changes-buffer (old-fun file backend &optional new-rev buf-base-name)
+(defun diff-hl-flydiff-changes-buffer (file backend buf &optional new-rev)
   (setq diff-hl-flydiff-modified-tick (buffer-chars-modified-tick))
-  (let ((diff-buf (diff-hl-generate-new-buffer (or buf-base-name " *diff-hl-flydiff*") t)))
-    (if new-rev
-        (funcall old-fun file backend new-rev diff-buf)
-      (diff-hl-diff-buffer-with-reference file diff-buf backend))))
+  (if new-rev
+      (diff-hl-changes-buffer-default file backend buf new-rev)
+    (diff-hl-diff-buffer-with-reference file buf backend)))
 
 (defsubst diff-hl-flydiff-update-p ()
   (not (or
@@ -93,14 +92,14 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
 
         (advice-add 'diff-hl-modified-p :before-until
                     #'diff-hl-flydiff/modified-p)
-        (advice-add 'diff-hl-changes-buffer :around
-                    #'diff-hl-flydiff-changes-buffer)
+        (setq diff-hl-changes-buffer-function #'diff-hl-flydiff-changes-buffer)
         (setq diff-hl-flydiff-timer
               (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update-throttle)))
 
     (advice-remove 'diff-hl-overlay-modified #'ignore)
 
     (advice-remove 'diff-hl-modified-p #'diff-hl-flydiff/modified-p)
-    (advice-remove 'diff-hl-changes-buffer #'diff-hl-flydiff-changes-buffer)))
+    (setq diff-hl-changes-buffer-function #'diff-hl-changes-buffer)
+    ))
 
 (provide 'diff-hl-flydiff)

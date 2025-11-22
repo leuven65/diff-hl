@@ -490,12 +490,17 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
       (generate-new-buffer buf-base-name inhibit-buffer-hooks)
     (generate-new-buffer buf-base-name)))
 
-(defun diff-hl-changes-buffer (file backend &optional new-rev buf-base-name)
+(defvar diff-hl-changes-buffer-function nil)
+
+(defsubst diff-hl-changes-buffer-default (file backend buf &optional new-rev)
   (diff-hl-with-diff-switches
-   (diff-hl-diff-against-reference file backend
-                                   ;; avoid reusing buffer, it will cause issue.
-                                   (diff-hl-generate-new-buffer (or buf-base-name " *diff-hl*") t)
-                                   new-rev)))
+   (diff-hl-diff-against-reference file backend buf new-rev)))
+
+(defsubst diff-hl-changes-buffer (file backend buf &optional new-rev)
+  (if diff-hl-changes-buffer-function
+      (funcall diff-hl-changes-buffer-function file backend buf new-rev)
+    ;; default
+    (diff-hl-changes-buffer-default file backend buf new-rev)))
 
 (defun diff-hl-diff-against-reference (file backend buffer &optional new-rev)
   (cond
@@ -584,7 +589,10 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
            (not diff-hl-highlight-reference-function)
            (diff-hl-modified-p state))
           `((:working . ,(aio-await (diff-hl-changes-from-buffer-and-kill-async
-                                     (diff-hl-changes-buffer file backend))))))
+                                     (diff-hl-changes-buffer
+                                      file backend
+                                      ;; use new buffer to avoid issue
+                                      (diff-hl-generate-new-buffer " *diff-hl*" t)))))))
          ((or
            diff-hl-reference-revision
            (diff-hl-modified-p state))
@@ -592,12 +600,15 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                   (and (or diff-hl-reference-revision
                            hide-staged)
                        (diff-hl-changes-buffer file backend
-                                                (if hide-staged
-                                                    'git-index
-                                                  (diff-hl-head-revision backend))
-                                                " *diff-hl-reference* ")))
+                                               ;; use new buffer to avoid issue
+                                               (diff-hl-generate-new-buffer " *diff-hl-reference* " t)
+                                               (if hide-staged
+                                                   'git-index
+                                                 (diff-hl-head-revision backend)))))
                  (work-changes-diff-buf (let ((diff-hl-reference-revision nil))
-                                          (diff-hl-changes-buffer file backend)))
+                                          (diff-hl-changes-buffer file backend
+                                                                  ;; use new buffer to avoid issue
+                                                                  (diff-hl-generate-new-buffer " *diff-hl*" t))))
                  (ref-changes (aio-await (diff-hl-changes-from-buffer-and-kill-async ref-changes-diff-buf)))
                  (work-changes (aio-await (diff-hl-changes-from-buffer-and-kill-async work-changes-diff-buf))))
             `((:reference . ,(diff-hl-adjust-changes ref-changes work-changes))

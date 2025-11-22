@@ -142,8 +142,9 @@ buffer."
     (with-current-buffer buffer
       (if (buffer-modified-p)
           (diff-hl-diff-buffer-with-reference buffer-file-name dest-buffer)
-        (diff-hl-changes-buffer buffer-file-name (vc-backend buffer-file-name)
-                                nil dest-buffer))
+        (diff-hl-changes-buffer buffer-file-name
+                                (vc-backend buffer-file-name)
+                                dest-buffer))
       (switch-to-buffer dest-buffer)
       (diff-hl-diff-skip-to line)
       (setq vc-sentinel-movepoint (point)))
