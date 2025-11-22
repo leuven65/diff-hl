@@ -893,12 +893,20 @@ Return a list of line overlays used."
     (dolist (o (overlays-in (or beg (point-min)) (or end (point-max))))
       (when (overlay-get o 'diff-hl) (delete-overlay o)))))
 
-(defun diff-hl-overlay-modified (ov after-p _beg _end &optional _length)
+(defvar diff-hl-overlay-modified-function nil)
+
+(defsubst diff-hl-overlay-modified-default (ov after-p _beg _end &optional _length)
   "Delete the hunk overlay and all our line overlays inside it."
   (unless after-p
     (when (overlay-buffer ov)
       (diff-hl-remove-overlays (overlay-start ov) (overlay-end ov))
       (delete-overlay ov))))
+
+(defsubst diff-hl-overlay-modified (ov after-p beg end &optional length)
+  (if diff-hl-overlay-modified-function
+      (funcall diff-hl-overlay-modified-function ov after-p beg end length)
+    ;; default
+    (diff-hl-overlay-modified-default ov after-p beg end length)))
 
 (defun diff-hl-on-after-change (_beg _end _len)
   "DTRT when we've `undo'-ne the buffer into unmodified state."

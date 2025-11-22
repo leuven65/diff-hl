@@ -89,15 +89,14 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
 
   (if diff-hl-flydiff-mode
       (progn
-        (advice-add 'diff-hl-overlay-modified :override #'ignore)
-
+        (setq diff-hl-overlay-modified-function #'ignore)
         (setq diff-hl-modified-p-function #'diff-hl-flydiff/modified-p)
         (setq diff-hl-changes-buffer-function #'diff-hl-flydiff-changes-buffer)
+
         (setq diff-hl-flydiff-timer
               (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update-throttle)))
 
-    (advice-remove 'diff-hl-overlay-modified #'ignore)
-
+    (setq diff-hl-overlay-modified-function nil)
     (setq diff-hl-modified-p-function nil)
     (setq diff-hl-changes-buffer-function nil)
     ))
