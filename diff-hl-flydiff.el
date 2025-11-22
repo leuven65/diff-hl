@@ -74,8 +74,9 @@ time Emacs becomes idle."
       ;; sync version
       (diff-hl-update-throttle))))
 
-(defun diff-hl-flydiff/modified-p (_state)
-  (buffer-modified-p))
+(defun diff-hl-flydiff/modified-p (state)
+  (or (buffer-modified-p)
+      (diff-hl-modified-p-default state)))
 
 ;;;###autoload
 (define-minor-mode diff-hl-flydiff-mode
@@ -90,16 +91,15 @@ This is a global minor mode.  It alters how `diff-hl-mode' works."
       (progn
         (advice-add 'diff-hl-overlay-modified :override #'ignore)
 
-        (advice-add 'diff-hl-modified-p :before-until
-                    #'diff-hl-flydiff/modified-p)
+        (setq diff-hl-modified-p-function #'diff-hl-flydiff/modified-p)
         (setq diff-hl-changes-buffer-function #'diff-hl-flydiff-changes-buffer)
         (setq diff-hl-flydiff-timer
               (run-with-idle-timer diff-hl-flydiff-delay t #'diff-hl-flydiff-update-throttle)))
 
     (advice-remove 'diff-hl-overlay-modified #'ignore)
 
-    (advice-remove 'diff-hl-modified-p #'diff-hl-flydiff/modified-p)
-    (setq diff-hl-changes-buffer-function #'diff-hl-changes-buffer)
+    (setq diff-hl-modified-p-function nil)
+    (setq diff-hl-changes-buffer-function nil)
     ))
 
 (provide 'diff-hl-flydiff)

@@ -475,7 +475,9 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
       (diff-hl--start-process-async process-name buffer program program-args)
     (diff-hl--call-process buffer program program-args)))
 
-(defun diff-hl-modified-p (state)
+(defvar diff-hl-modified-p-function nil)
+
+(defsubst diff-hl-modified-p-default (state)
   (or (memq state '(edited conflict))
       (and (eq state 'up-to-date)
            ;; VC state is stale in after-revert-hook.
@@ -484,6 +486,12 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
                  revert-buffer-in-progress-p)
                ;; Diffing against an older revision.
                diff-hl-reference-revision))))
+
+(defsubst diff-hl-modified-p (state)
+  (if diff-hl-modified-p-function
+      (funcall diff-hl-modified-p-function state)
+    ;; default
+    (diff-hl-modified-p-default state)))
 
 (defsubst diff-hl-generate-new-buffer (buf-base-name &optional inhibit-buffer-hooks)
   (static-if (>= emacs-major-version 28)
