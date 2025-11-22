@@ -39,6 +39,11 @@
 (require 'diff-hl)
 (require 'diff)
 
+(eval-when-compile
+  (declare-function diff-hl-show-hunk-inline "diff-hl-show-hunk-inline")
+  (declare-function diff-hl-show-hunk-posframe "diff-hl-show-hunk-posframe")
+  )
+
 (defgroup diff-hl-show-hunk nil
   "Show vc diffs in a posframe or popup."
   :group 'diff-hl)
@@ -53,7 +58,7 @@ Any command not on this list will cause the hunk to be hidden."
   :type '(repeat function)
   :group 'diff-hl-show-hunk)
 
-(defcustom diff-hl-show-hunk-function 'diff-hl-show-hunk-inline
+(defcustom diff-hl-show-hunk-function #'diff-hl-show-hunk-inline
   "The function used to render the hunk.
 The function receives as first parameter a buffer with the
 contents of the hunk, and as second parameter the line number
