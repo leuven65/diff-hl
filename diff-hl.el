@@ -1460,8 +1460,7 @@ The value of this variable is a mode line template as in
         (when buf
           (with-current-buffer buf
             (when diff-hl-mode
-              (setq diff-hl--git-index-object-name nil)
-              (diff-hl-update))))))))
+              (diff-hl--force-update))))))))
 
 (defvar diff-hl-repeat-exceptions '(diff-hl-show-hunk
                                     diff-hl-show-hunk-previous
