@@ -85,6 +85,7 @@
   (declare-function vc-git-command "vc-git")
 
   (defvar vc-sentinel-movepoint)
+  (defvar coding-system--for-buffer-diff)
 
   (unless (macrop 'static-if)
     (defmacro static-if (condition then-form &rest else-forms)
@@ -1667,6 +1668,7 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
   (let* ((output-buf (get-buffer-create (or output-buf " *diff-hl-Diff*")))
          (old (if (bufferp old) old (expand-file-name old)))
          (new (if (bufferp new) new (expand-file-name new)))
+         (coding-system--for-buffer-diff nil) ; fix issue for emacs 31+
          (old-alt (diff-file-local-copy old))
          (new-alt (diff-file-local-copy new))
          (switches (or switches diff-switches)))
