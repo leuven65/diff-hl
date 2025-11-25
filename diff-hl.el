@@ -308,6 +308,9 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
      (lambda (value)
        (or (null value) (stringp value))))
 
+(defvar-local diff-hl--git-index-object-name nil
+  "Cache for Git index object name of the current file.")
+
 (defun diff-hl-define-bitmaps ()
   (let* ((scale (if (and (boundp 'text-scale-mode-amount)
                          (numberp text-scale-mode-amount))
@@ -1424,10 +1427,10 @@ The value of this variable is a mode line template as in
         ;; doesn't do much, because `buffer-stale--default-function'
         ;; doesn't care about changed VC state.
         ;; https://github.com/magit/magit/issues/603
-        (add-hook 'magit-revert-buffer-hook 'diff-hl-update nil t)
+        (add-hook 'magit-revert-buffer-hook #'diff-hl--magit-revert-callback nil t)
         ;; Magit versions 2.0-2.3 don't do the above and call this
         ;; instead, but only when they don't call `revert-buffer':
-        (add-hook 'magit-not-reverted-hook 'diff-hl-update nil t)
+        (add-hook 'magit-not-reverted-hook #'diff-hl--magit-revert-callback nil t)
         (add-hook 'text-scale-mode-hook 'diff-hl-maybe-redefine-bitmaps nil t)
         (when-let* ((rev (cdr
                           (cl-find-if
@@ -1438,12 +1441,16 @@ The value of this variable is a mode line template as in
     (remove-hook 'after-change-functions 'diff-hl-on-after-change t)
     (remove-hook 'find-file-hook 'diff-hl-update-debounce t)
     (remove-hook 'after-revert-hook 'diff-hl-update-debounce t)
-    (remove-hook 'magit-revert-buffer-hook 'diff-hl-update t)
-    (remove-hook 'magit-not-reverted-hook 'diff-hl-update t)
+    (remove-hook 'magit-revert-buffer-hook #'diff-hl--magit-revert-callback t)
+    (remove-hook 'magit-not-reverted-hook #'diff-hl--magit-revert-callback t)
     (remove-hook 'text-scale-mode-hook 'diff-hl-maybe-redefine-bitmaps t)
     (diff-hl-remove-overlays)
     (diff-hl--autohide-margin)
     (kill-local-variable 'diff-hl-reference-revision)))
+
+(defun diff-hl--magit-revert-callback ()
+  (setq diff-hl--git-index-object-name nil)
+  (diff-hl-update))
 
 (defun diff-hl-after-checkin ()
   (let ((fileset (vc-deduce-fileset t)))
@@ -1452,6 +1459,7 @@ The value of this variable is a mode line template as in
         (when buf
           (with-current-buffer buf
             (when diff-hl-mode
+              (setq diff-hl--git-index-object-name nil)
               (diff-hl-update))))))))
 
 (defvar diff-hl-repeat-exceptions '(diff-hl-show-hunk
@@ -1591,12 +1599,14 @@ the user should be returned."
                    (vc-call-backend (or backend (vc-backend file))
                                     'working-revision file)))
 
-;; TODO: Cache based on .git/index's mtime, maybe.
 (defsubst diff-hl-git-index-object-name (file)
-  (with-temp-buffer
-    (diff-hl--call-process (current-buffer) vc-git-program
-                               (list "ls-files" "--format=%(objectname)" "--" file))
-    (string-trim (buffer-string))))
+  (unless diff-hl--git-index-object-name
+    (setq diff-hl--git-index-object-name
+          (with-temp-buffer
+            (diff-hl--call-process (current-buffer) vc-git-program
+                                   (list "ls-files" "--format=%(objectname)" "--" file))
+            (string-trim (buffer-string)))))
+  diff-hl--git-index-object-name)
 
 (defun diff-hl-git-index-revision (file object-name)
   (let ((filename (diff-hl-make-temp-file-name file
