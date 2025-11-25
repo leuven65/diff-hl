@@ -292,6 +292,11 @@ called, If it is called again within this time, the timer is reset."
   "Make `diff-hl-update' run no more frequently than once every THROTTLE seconds."
   :type 'number)
 
+(defcustom diff-hl-cache-git-index-object-name nil
+  "When non-nil, cache Git index object name for the current file, avoid
+calling \"git ls-files\" every time, which is expensive on windows platform."
+  :type 'boolean)
+
 (defvar diff-hl-reference-revision-projects-cache '()
   "Alist of cached directory roots for per-project reference revisions.
 Each element in this list has the form (DIR . REV).
@@ -309,7 +314,9 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
        (or (null value) (stringp value))))
 
 (defvar-local diff-hl--git-index-object-name nil
-  "Cache for Git index object name of the current file.")
+  "Cache for Git index object name of the current file.
+
+Please reset it when git index is changed externally.")
 
 (defun diff-hl-define-bitmaps ()
   (let* ((scale (if (and (boundp 'text-scale-mode-amount)
@@ -1600,7 +1607,8 @@ the user should be returned."
                                     'working-revision file)))
 
 (defsubst diff-hl-git-index-object-name (file)
-  (unless diff-hl--git-index-object-name
+  (unless (and diff-hl-cache-git-index-object-name
+               diff-hl--git-index-object-name)
     (setq diff-hl--git-index-object-name
           (with-temp-buffer
             (diff-hl--call-process (current-buffer) vc-git-program
