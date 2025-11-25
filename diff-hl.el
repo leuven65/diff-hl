@@ -1408,8 +1408,8 @@ The value of this variable is a mode line template as in
   (if diff-hl-mode
       (progn
         (diff-hl-maybe-define-bitmaps)
-        (add-hook 'after-save-hook 'diff-hl-update nil t)
-        (add-hook 'after-change-functions 'diff-hl-on-after-change nil t)
+        (add-hook 'after-save-hook #'diff-hl-update nil t)
+        (add-hook 'after-change-functions #'diff-hl-on-after-change nil t)
         (add-hook (if vc-mode
                       ;; Defer until the end of this hook, so that its
                       ;; elements can modify the update behavior.
@@ -1419,10 +1419,10 @@ The value of this variable is a mode line template as in
                     ;; let's wait until the state information is
                     ;; saved, in order not to fetch it twice.
                     'find-file-hook)
-                  'diff-hl-update-debounce t t)
+                  #'diff-hl-update-debounce t t)
         ;; Never removed because it acts globally.
-        (add-hook 'vc-checkin-hook 'diff-hl-after-checkin)
-        (add-hook 'after-revert-hook 'diff-hl-update-debounce nil t)
+        (add-hook 'vc-checkin-hook #'diff-hl-after-checkin)
+        (add-hook 'after-revert-hook #'diff-hl-update-debounce nil t)
         ;; Magit does call `auto-revert-handler', but it usually
         ;; doesn't do much, because `buffer-stale--default-function'
         ;; doesn't care about changed VC state.
@@ -1437,15 +1437,16 @@ The value of this variable is a mode line template as in
                            (lambda (pair) (string-prefix-p (car pair) default-directory))
                            diff-hl-reference-revision-projects-cache))))
           (setq-local diff-hl-reference-revision rev)))
-    (remove-hook 'after-save-hook 'diff-hl-update t)
-    (remove-hook 'after-change-functions 'diff-hl-on-after-change t)
-    (remove-hook 'find-file-hook 'diff-hl-update-debounce t)
-    (remove-hook 'after-revert-hook 'diff-hl-update-debounce t)
+    (remove-hook 'after-save-hook #'diff-hl-update t)
+    (remove-hook 'after-change-functions #'diff-hl-on-after-change t)
+    (remove-hook 'find-file-hook #'diff-hl-update-debounce t)
+    (remove-hook 'after-revert-hook #'diff-hl-update-debounce t)
     (remove-hook 'magit-revert-buffer-hook #'diff-hl--magit-revert-callback t)
     (remove-hook 'magit-not-reverted-hook #'diff-hl--magit-revert-callback t)
-    (remove-hook 'text-scale-mode-hook 'diff-hl-maybe-redefine-bitmaps t)
+    (remove-hook 'text-scale-mode-hook #'diff-hl-maybe-redefine-bitmaps t)
     (diff-hl-remove-overlays)
     (diff-hl--autohide-margin)
+    (kill-local-variable 'diff-hl--git-index-object-name)
     (kill-local-variable 'diff-hl-reference-revision)))
 
 (defun diff-hl--magit-revert-callback ()
