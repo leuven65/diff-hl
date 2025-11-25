@@ -736,6 +736,10 @@ contents as they are (or would be) after applying the changes in NEW."
       ;; sync version.
       (aio-wait-for promise))))
 
+(defun diff-hl--force-update ()
+  (setq diff-hl--git-index-object-name nil)
+  (diff-hl-update))
+
 (defun diff-hl-with-editor-p (_dir)
   (bound-and-true-p with-editor-mode))
 
@@ -1427,10 +1431,10 @@ The value of this variable is a mode line template as in
         ;; doesn't do much, because `buffer-stale--default-function'
         ;; doesn't care about changed VC state.
         ;; https://github.com/magit/magit/issues/603
-        (add-hook 'magit-revert-buffer-hook #'diff-hl--magit-revert-callback nil t)
+        (add-hook 'magit-revert-buffer-hook #'diff-hl--force-update nil t)
         ;; Magit versions 2.0-2.3 don't do the above and call this
         ;; instead, but only when they don't call `revert-buffer':
-        (add-hook 'magit-not-reverted-hook #'diff-hl--magit-revert-callback nil t)
+        (add-hook 'magit-not-reverted-hook #'diff-hl--force-update nil t)
         (add-hook 'text-scale-mode-hook 'diff-hl-maybe-redefine-bitmaps nil t)
         (when-let* ((rev (cdr
                           (cl-find-if
@@ -1441,17 +1445,13 @@ The value of this variable is a mode line template as in
     (remove-hook 'after-change-functions #'diff-hl-on-after-change t)
     (remove-hook 'find-file-hook #'diff-hl-update-debounce t)
     (remove-hook 'after-revert-hook #'diff-hl-update-debounce t)
-    (remove-hook 'magit-revert-buffer-hook #'diff-hl--magit-revert-callback t)
-    (remove-hook 'magit-not-reverted-hook #'diff-hl--magit-revert-callback t)
+    (remove-hook 'magit-revert-buffer-hook #'diff-hl--force-update t)
+    (remove-hook 'magit-not-reverted-hook #'diff-hl--force-update t)
     (remove-hook 'text-scale-mode-hook #'diff-hl-maybe-redefine-bitmaps t)
     (diff-hl-remove-overlays)
     (diff-hl--autohide-margin)
     (kill-local-variable 'diff-hl--git-index-object-name)
     (kill-local-variable 'diff-hl-reference-revision)))
-
-(defun diff-hl--magit-revert-callback ()
-  (setq diff-hl--git-index-object-name nil)
-  (diff-hl-update))
 
 (defun diff-hl-after-checkin ()
   (let ((fileset (vc-deduce-fileset t)))
