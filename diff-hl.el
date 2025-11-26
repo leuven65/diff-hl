@@ -430,7 +430,7 @@ Please reset it when git index is changed externally.")
 (defsubst diff-hl--use-async-p ()
   diff-hl-update-async)
 
-(defsubst diff-hl--set-process-sentinel (process callback-when-done)
+(defsubst diff-hl--set-process-sentinel (process sentinel-callback)
   (set-process-sentinel
    process
    (let ((old-sentinel (process-sentinel process)))
@@ -439,10 +439,7 @@ Please reset it when git index is changed externally.")
        (when old-sentinel
          (funcall old-sentinel proc msg))
        ;; call my sentinel
-       (let ((stat (process-status proc)))
-         (cond
-          ((eq stat 'exit) (funcall callback-when-done))
-          ((not (eq stat 'run)) (error "Unexpected process state"))))))))
+       (funcall sentinel-callback proc msg)))))
 
 (defsubst diff-hl--start-process (process-name buffer program &optional program-args callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
@@ -569,29 +566,43 @@ Please reset it when git index is changed externally.")
 (defvar diff-hl--diff-buffer-list nil
   "Buffers created by `diff-hl-changes-buffer' and not yet killed.")
 
-(defsubst diff-hl--process-buffer-promise (buf)
-  (let ((promise (aio-promise))
-        (proc (get-buffer-process buf)))
+(defun diff-hl--process-finish-promise (proc &optional promise)
+  (let* ((promise (or promise (aio-promise)))
+         (buf (process-buffer proc))
+         (stat (process-status proc)))
     (cond
-     ;; If there's no background process, just execute the code.
-     ((or (null proc) (eq (process-status proc) 'exit))
-      (when proc (accept-process-output proc 0))
+     ;; if process finised, resolve promise immediately.
+     ((eq stat 'exit)
+      ;; Make sure all output is read.
+      (accept-process-output proc)
       (aio-resolve promise (lambda () buf)))
-     ((eq (process-status proc) 'run)
-      (diff-hl--set-process-sentinel proc
-                                     (lambda ()
-                                       (aio-resolve promise
-                                                    (lambda () buf)))))
-     (t (error "Unexpected process state")))
+     ;; If process is still running, set sentinel to resolve promise later.
+     ((eq stat 'run)
+      (unless (process-get proc :diff-hl--process-sentinel-set)
+        (process-put proc :diff-hl--process-sentinel-set t)
+        (diff-hl--set-process-sentinel
+         proc
+         (lambda (proc _msg)
+           (diff-hl--process-finish-promise proc promise)))))
+     ;; report error otherwise
+     (t (aio-resolve promise
+                     (lambda ()
+                       (error "Unexpected process state %s" stat)))))
     ;; return promise
     promise))
+
+(defsubst diff-hl--process-buffer-finish-promise (buf)
+  (if-let* ((proc (get-buffer-process buf)))
+      (diff-hl--process-finish-promise proc)
+    buf))
 
 (aio-defun diff-hl-changes-from-buffer-and-kill-async (buf)
   (when (buffer-live-p buf)
     ;; add buffer to the list
     (push buf diff-hl--diff-buffer-list)
     (unwind-protect
-        (diff-hl-changes-from-buffer (aio-await (diff-hl--process-buffer-promise buf)))
+        (diff-hl-changes-from-buffer
+         (aio-await (diff-hl--process-buffer-finish-promise buf)))
       ;; kill the buffer in any case
       (kill-buffer buf)
       ;; and remove it from the list
