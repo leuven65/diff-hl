@@ -430,7 +430,7 @@ Please reset it when git index is changed externally.")
 (defsubst diff-hl--use-async-p ()
   diff-hl-update-async)
 
-(defsubst diff-hl--set-process-sentinel (process sentinel-callback)
+(defsubst diff-hl--set-process-sentinel (process sentinel)
   (set-process-sentinel
    process
    (let ((old-sentinel (process-sentinel process)))
@@ -439,11 +439,11 @@ Please reset it when git index is changed externally.")
        (when old-sentinel
          (funcall old-sentinel proc msg))
        ;; call my sentinel
-       (funcall sentinel-callback proc msg)))))
+       (funcall sentinel proc msg)))))
 
-(defsubst diff-hl--start-process (process-name buffer program &optional program-args callback-when-done)
+(cl-defsubst diff-hl--start-process (program &optional program-args &key name buffer callback-when-done)
   ;; TODO: Use `start-file-process' for remote file operation.
-  (make-process :name process-name
+  (make-process :name name
                 :buffer buffer
                 :command (cons program program-args)
                 :sentinel (when callback-when-done
@@ -454,34 +454,36 @@ Please reset it when git index is changed externally.")
                                  ((eq stat 'exit) (funcall callback-when-done))
                                  ((not (eq stat 'run)) (error "Unexpected process state"))))))))
 
-(defsubst diff-hl--call-process (buffer program &optional program-args)
+(defsubst diff-hl--call-process (program &optional program-args buffer)
   ;; TODO: Use `process-file' for remote file operation.
   (apply #'call-process program nil buffer nil program-args))
 
-(defsubst diff-hl--run-command (process-name buffer program &optional program-args callback-when-done)
+(cl-defsubst diff-hl--run-command (program &optional program-args &key buffer name callback-when-done)
   (if (diff-hl--use-async-p)
-      (diff-hl--start-process process-name buffer program program-args callback-when-done)
+      (diff-hl--start-process program program-args
+                              :name name :buffer buffer
+                              :callback-when-done callback-when-done)
     (prog1
-        (diff-hl--call-process buffer program program-args)
+        (diff-hl--call-process program program-args buffer)
       (when callback-when-done
         (funcall callback-when-done)))))
 
 ;; (defsubst diff-hl--start-process-async (process-name buffer program &optional program-args)
 ;;   (let ((promise (aio-promise)))
-;;     (diff-hl--start-process process-name
-;;                             buffer
-;;                             program
+;;     (diff-hl--start-process program
 ;;                             program-args
-;;                             (lambda ()
-;;                               (aio-resolve promise
-;;                                            (lambda () buffer))))
+;;                             :name process-name
+;;                             :buffer buffer                            
+;;                             :callback-when-done (lambda ()
+;;                                                   (aio-resolve promise
+;;                                                                (lambda () buffer))))
 ;;     ;; return promise
 ;;     promise))
 
 ;; (defsubst diff-hl--run-command-1 (process-name buffer program &optional program-args)
 ;;   (if (diff-hl--use-async-p)
 ;;       (diff-hl--start-process-async process-name buffer program program-args)
-;;     (diff-hl--call-process buffer program program-args)))
+;;     (diff-hl--call-process program program-args buffer)))
 
 (defvar diff-hl-modified-p-function nil)
 
@@ -524,19 +526,17 @@ Please reset it when git index is changed externally.")
          (not diff-hl-reference-revision)
          (not diff-hl-show-staged-changes)
          (eq backend 'Git))
-    (diff-hl--run-command "diff-hl/git-diff-files"
-                          buffer
-                          vc-git-program
+    (diff-hl--run-command vc-git-program
                           `("--no-pager"
                             "diff-files"
                             ,@(vc-switches 'git 'diff)
                             "-p"
                             "--"
-                            ,file)))
+                            ,file)
+                          :name "diff-hl/git-diff-files"
+                          :buffer buffer))
    ((eq new-rev 'git-index)
-    (diff-hl--run-command "diff-hl/git-diff-index"
-                          buffer
-                          vc-git-program
+    (diff-hl--run-command vc-git-program
                           `("--no-pager"
                             "diff-index"
                             ,@(vc-switches 'git 'diff)
@@ -545,7 +545,9 @@ Please reset it when git index is changed externally.")
                             ,(or diff-hl-reference-revision
                                  (diff-hl-head-revision backend))
                             "--"
-                            ,file)))
+                            ,file)
+                          :name "diff-hl/git-diff-index"
+                          :buffer buffer))
    (t
     (condition-case err
         (vc-call-backend backend 'diff (list file)
@@ -1623,8 +1625,9 @@ the user should be returned."
                diff-hl--git-index-object-name)
     (setq diff-hl--git-index-object-name
           (with-temp-buffer
-            (diff-hl--call-process (current-buffer) vc-git-program
-                                   (list "ls-files" "--format=%(objectname)" "--" file))
+            (diff-hl--call-process vc-git-program
+                                   (list "ls-files" "--format=%(objectname)" "--" file)
+                                   (current-buffer))
             (string-trim (buffer-string)))))
   diff-hl--git-index-object-name)
 
@@ -1640,8 +1643,9 @@ the user should be returned."
               (let ((outbuf (current-buffer)))
                 ;; Change buffer to be inside the repo.
                 (with-current-buffer (get-file-buffer file)
-                  (diff-hl--call-process outbuf vc-git-program
-                                         (list "cat-file" "blob" object-name))))))
+                  (diff-hl--call-process vc-git-program
+                                         (list "cat-file" "blob" object-name)
+                                         outbuf)))))
         (error
          (when (file-exists-p filename)
            (delete-file filename)))))
@@ -1686,8 +1690,7 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
     (with-current-buffer output-buf
       (erase-buffer))
     (let ((default-directory diff-hl-temporary-directory))
-      (diff-hl--run-command "Diff" output-buf
-                            diff-command
+      (diff-hl--run-command diff-command
                             `(,@(if (listp switches)
                                     switches
                                   (static-if (>= emacs-major-version 28)
@@ -1695,6 +1698,9 @@ CONTEXT-LINES is the size of the unified diff context, defaults to 0."
                                     (split-string switches nil t)))
                               ,(or old-alt old)
                               ,(or new-alt new))
+                            :name "Diff"
+                            :buffer output-buf
+                            :callback-when-done                            
                             (lambda ()
                               ;; delete temp files
                               (when old-alt (delete-file old-alt))
