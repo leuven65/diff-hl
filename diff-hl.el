@@ -289,7 +289,7 @@ didn't work reliably in such during testing."
 called, If it is called again within this time, the timer is reset."
   :type 'number)
 
-(defcustom diff-hl-update-throttle-delay 0.7
+(defcustom diff-hl-update-throttle-delay 0.1
   "Make `diff-hl-update' run no more frequently than once every THROTTLE seconds."
   :type 'number)
 
