@@ -491,7 +491,8 @@ Please reset it when git index is changed externally.")
   (or (memq state '(edited conflict))
       (and (eq state 'up-to-date)
            ;; VC state is stale in after-revert-hook.
-           (or (static-if (>= emacs-major-version 31)
+           (or (static-if (boundp 'revert-buffer-in-progress)
+                   ;; Emacs 31.
                    revert-buffer-in-progress
                  revert-buffer-in-progress-p)
                ;; Diffing against an older revision.
