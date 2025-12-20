@@ -441,22 +441,20 @@ Please reset it when git index is changed externally.")
        ;; call my sentinel
        (funcall sentinel proc msg)))))
 
-(cl-defsubst diff-hl--start-process (program &optional program-args &key name buffer callback-when-done)
-  ;; TODO: Use `start-file-process' for remote file operation.
-  (make-process :name name
-                :buffer buffer
-                :command (cons program program-args)
-                :sentinel (when callback-when-done
-                            (lambda (proc msg)
-                              (internal-default-process-sentinel proc msg)
-                              (let ((stat (process-status proc)))
-                                (cond
-                                 ((eq stat 'exit) (funcall callback-when-done))
-                                 ((not (eq stat 'run)) (error "Unexpected process state"))))))))
+(cl-defsubst diff-hl--start-process (program &optional program-args
+                                             &key name buffer callback-when-done)
+  (let ((proc (apply #'start-file-process name buffer program program-args)))
+    (when callback-when-done
+      (diff-hl--set-process-sentinel proc
+                                     (lambda (proc _msg)
+                                       (let ((stat (process-status proc)))
+                                         (cond
+                                          ((eq stat 'exit) (funcall callback-when-done))
+                                          ((not (eq stat 'run)) (error "Unexpected process state")))))))
+    proc))
 
 (defsubst diff-hl--call-process (program &optional program-args buffer)
-  ;; TODO: Use `process-file' for remote file operation.
-  (apply #'call-process program nil buffer nil program-args))
+  (apply #'process-file program nil buffer nil program-args))
 
 (cl-defsubst diff-hl--run-command (program &optional program-args &key buffer name callback-when-done)
   (if (diff-hl--use-async-p)
