@@ -324,12 +324,12 @@ It can be a relative expression as well, such as \"HEAD^\" with Git, or
 
 Please reset it when git index is changed externally.")
 
-(defun diff-hl--target-buffer (&optional buf)
+(defsubst diff-hl--target-buffer (&optional buf)
   "Return the correct buffer for the situation, preferring the base buffer."
   (let ((buf (or buf (current-buffer))))
     (or (buffer-base-buffer buf) buf)))
 
-(defun diff-hl--buffer-file-name (&optional buffer)
+(defsubst diff-hl--buffer-file-name (&optional buffer)
   "Return the file name of the BUFFER or its base buffer.
 BUFFER defaults to the current buffer."
   (buffer-file-name (diff-hl--target-buffer buffer)))
